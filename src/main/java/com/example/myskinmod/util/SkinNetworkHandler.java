@@ -49,7 +49,6 @@ public class SkinNetworkHandler {
         if (net.minecraft.client.MinecraftClient.getInstance().player == null) return;
         java.util.UUID myUuid = net.minecraft.client.MinecraftClient.getInstance().player.getUuid();
 
-        // ใช้ Thread ใหม่เพื่อไม่ให้หน้าจอเกมค้างตอนกำลังส่ง
         new Thread(() -> {
             try {
                 for (int i = 0; i < totalChunks; i++) {

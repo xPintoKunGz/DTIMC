@@ -94,6 +94,49 @@ public class SkinTypeSelectionScreen extends Screen {
         }
     }
 
+    private void fixSkinTransparency(NativeImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int scale = width / 64; // อัตราส่วนตามขนาดสกิน (รองรับ HD Skin)
+
+        // ขอบเขตพิกเซลของ Base Layer บนสกินมาตรฐาน 64x64 [x1, y1, x2, y2]
+        int[][] baseRegions = {
+                {0, 0, 32, 16},   // Head Base
+                {0, 16, 16, 32},  // Right Leg Base
+                {16, 16, 40, 32}, // Torso Base
+                {40, 16, 56, 32}, // Right Arm Base
+                {16, 48, 32, 64}, // Left Leg Base
+                {32, 48, 48, 64}  // Left Arm Base
+        };
+
+        for (int[] region : baseRegions) {
+            int xStart = region[0] * scale;
+            int yStart = region[1] * scale;
+            int xEnd = region[2] * scale;
+            int yEnd = region[3] * scale;
+
+            // หากเป็นสกินรุ่นเก่า (64x32) ให้ข้ามส่วนขากับแขนซ้าย
+            if (yStart >= height) continue;
+
+            for (int x = xStart; x < xEnd && x < width; x++) {
+                for (int y = yStart; y < yEnd && y < height; y++) {
+                    int color = image.getColor(x, y);
+                    int alpha = (color >> 24) & 0xFF; // ดึงค่า Alpha
+
+                    if (alpha < 255) {
+                        if (alpha == 0) {
+                            // ถ้าโปร่งใส 100% ให้แทนที่ด้วยสีดำสนิท (Opaque Black)
+                            image.setColor(x, y, 0xFF000000);
+                        } else {
+                            // ถ้าโปร่งใสบางส่วน ให้ปรับ Alpha เป็น 255 (ทึบแสง)
+                            image.setColor(x, y, color | 0xFF000000);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private ButtonWidget classicButton;
     private ButtonWidget slimButton;
     private NativeImage skinImage;
@@ -217,13 +260,17 @@ public class SkinTypeSelectionScreen extends Screen {
         drawDashedBorder(context, headBoxX - 1, headBoxY - 1, headBoxSize + 2, headBoxSize + 2, 0xFFFFFFFF);
 
         // วาดรูปหน้าผู้เล่นใน Profile Box พร้อมดัน Z-index ให้มาหน้าสุด
-        if (previewSkinId != null) {
+        if (previewSkinId != null && skinImage != null) {
+            int imgW = skinImage.getWidth();
+            int imgH = skinImage.getHeight();
+            float scale = imgW / 64.0f;
+
             context.getMatrices().push();
             context.getMatrices().translate(0, 0, 500.0f); // ดันไปหน้าสุด
             // ส่วนใบหน้าชั้นใน (Face)
-            context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 8.0f, 8.0f, 8, 8, 64, 64);
+            context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 8.0f * scale, 8.0f * scale, (int)(8 * scale), (int)(8 * scale), imgW, imgH);
             // ส่วนใบหน้าชั้นนอก (Hat Layer)
-            context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 40.0f, 8.0f, 8, 8, 64, 64);
+            context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 40.0f * scale, 8.0f * scale, (int)(8 * scale), (int)(8 * scale), imgW, imgH);
             context.getMatrices().pop();
         }
 
@@ -234,11 +281,14 @@ public class SkinTypeSelectionScreen extends Screen {
         context.fill(texBoxX, texBoxY, texBoxX + texBoxSize, texBoxY + texBoxSize, 0x66000000);
         drawDashedBorder(context, texBoxX - 1, texBoxY - 1, texBoxSize + 2, texBoxSize + 2, 0xFFFFFFFF);
 
-        if (previewSkinId != null) {
+        if (previewSkinId != null && skinImage != null) {
+            int imgW = skinImage.getWidth();
+            int imgH = skinImage.getHeight();
+
             context.getMatrices().push();
             context.getMatrices().translate(0, 0, 500.0f);
             // วาดรูปแผ่นสกินทั้งหมด (Full Texture Layout) ลงในช่อง
-            context.drawTexture(previewSkinId, texBoxX + 3, texBoxY + 3, 0, 0, texBoxSize - 6, texBoxSize - 6, texBoxSize - 6, texBoxSize - 6);
+            context.drawTexture(previewSkinId, texBoxX + 3, texBoxY + 3, texBoxSize - 6, texBoxSize - 6, 0.0f, 0.0f, imgW, imgH, imgW, imgH);
             context.getMatrices().pop();
         }
         // ==============================================================================================
@@ -330,7 +380,6 @@ public class SkinTypeSelectionScreen extends Screen {
                     }
                 }
 
-                // ===================== เพิ่มการตรวจสอบขนาดสกิน (64-8192) =====================
                 int w = loadedImage.getWidth();
                 int h = loadedImage.getHeight();
                 if (w < 64 || h < 64 || w > 8192 || h > 8192) {
@@ -338,7 +387,12 @@ public class SkinTypeSelectionScreen extends Screen {
                     showSkinToast("ขนาดสกินไม่ถูกต้อง!", "รองรับขนาด 64x64 ถึง 8192x8192 เท่านั้น", "error", null);
                     return;
                 }
-                // =========================================================================
+
+                fixSkinTransparency(loadedImage);
+
+                if (this.skinImage != null) {
+                    this.skinImage.close();
+                }
 
                 this.skinImage = loadedImage;
 
@@ -493,12 +547,10 @@ public class SkinTypeSelectionScreen extends Screen {
         }).start();
     }
 
-    // ค้นหาเมธอด applySkin ใน SkinTypeSelectionScreen.java แล้วแทนที่ด้วยส่วนนี้
     private void applySkin(String modelType) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null && skinImage != null) {
             try {
-                // 1. ใช้ในเครื่องตัวเองก่อน (Client-side preview)
                 NativeImageBackedTexture texture = new NativeImageBackedTexture(skinImage);
                 Identifier newSkinId = client.getTextureManager().registerDynamicTexture(
                         "custom_skin_" + client.player.getUuid(),
@@ -506,19 +558,13 @@ public class SkinTypeSelectionScreen extends Screen {
                 );
                 SkinHelper.applySkin(client.player, newSkinId, modelType, skinImage.getWidth(), skinImage.getHeight());
 
-                // 2. เตรียมข้อมูลส่งไป Server (ใช้ระบบ Chunking)
+                java.nio.file.Path tempPath = null;
                 try {
-                    // สร้างไฟล์ชั่วคราวเพื่อเขียนรูปออกมาเป็น PNG
-                    java.nio.file.Path tempPath = java.nio.file.Files.createTempFile("skin_send", ".png");
-                    skinImage.writeTo(tempPath); // ใช้ Path ตามที่ Error แนะนำ
+                    tempPath = java.nio.file.Files.createTempFile("skin_send", ".png");
+                    skinImage.writeTo(tempPath);
 
-                    // อ่าน Byte จากไฟล์นั้น
                     byte[] pngBytes = java.nio.file.Files.readAllBytes(tempPath);
 
-                    // ลบไฟล์ชั่วคราวทิ้งทันทีหลังอ่านเสร็จ
-                    java.nio.file.Files.deleteIfExists(tempPath);
-
-                    // ✅ เรียกใช้ระบบหั่นไฟล์ (Chunking) ส่งทีละ 16KB
                     SkinNetworkHandler.sendSkinChunks(pngBytes);
 
                     showSkinToast("ใส่สกินเสร็จสิ้น!", "สกินของคุณถูกส่งไปยังเซิร์ฟเวอร์แล้ว!", "success", previewSkinId);
@@ -526,6 +572,11 @@ public class SkinTypeSelectionScreen extends Screen {
                 } catch (Exception e) {
                     System.out.println("[MySkinMod] Network Error: " + e.getMessage());
                     showSkinToast("Network Error", "ไม่สามารถส่งสกินได้", "error", null);
+                } finally {
+                    // ✅ ลบไฟล์ชั่วคราวทิ้งแน่นอน 100% ไม่ว่าจะส่งสำเร็จหรือล้มเหลว
+                    if (tempPath != null) {
+                        java.nio.file.Files.deleteIfExists(tempPath);
+                    }
                 }
 
                 client.setScreen(null);

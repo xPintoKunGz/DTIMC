@@ -3,7 +3,7 @@ package com.example.myskinmod.util;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.PlayerListEntry; // เพิ่มนำเข้า
+import net.minecraft.client.network.PlayerListEntry;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
