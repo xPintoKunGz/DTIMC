@@ -1,0 +1,29 @@
+plugins {
+    id 'fabric-loom' version '1.10.5'
+    id 'maven-publish'
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0'
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' } // Fabric repository
+    maven { url = 'https://modmaven.dev/' }
+}
+
+jar {
+    manifest {
+        attributes(
+                "Main-Class": "com.example.myskinmod.MySkinMod"
+        )
+    }
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.20.1'
+    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.92.12+1.20.1" // สำหรับ 1.20.1
+}

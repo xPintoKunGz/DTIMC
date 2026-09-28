@@ -1,0 +1,8 @@
+{
+  "key.myskinmod.open_menu": "Open Skin Menu",
+  "category.myskinmod": "My Skin Mod",
+  "gui.myskinmod.singleplayer_title": "Skin Settings (Singleplayer)",
+  "gui.myskinmod.multiplayer_title": "Skin Settings (Multiplayer)",
+  "gui.myskinmod.apply_button": "Apply Skin",
+  "gui.myskinmod.url_field": "Skin URL"
+}

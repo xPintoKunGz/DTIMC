@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "com.example.myskinmod.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "PlayerEntityAccessor",
+    "PlayerSkinMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

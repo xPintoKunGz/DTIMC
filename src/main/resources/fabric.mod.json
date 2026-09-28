@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "myskinmod",
+	"version": "1.0.0",
+	"name": "NUI",
+	"description": "A mod to change your Minecraft skin from an in-game menu.",
+	"authors": [
+		"xPintoKunG_Z"
+	],
+	"contact": {
+		"homepage": "https://example.com",
+		"sources": "https://github.com/xPintoKunGz/NUI"
+	},
+	"license": "MIT",
+	"icon": "assets/myskinmod/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"main": [ "com.example.myskinmod.MySkinModServer" ],
+		"client": [ "com.example.myskinmod.MySkinMod" ]
+	},
+	"mixins": [
+		"myskinmod.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.14.21",
+		"fabric-api": "*",
+		"minecraft": "1.20.1",
+		"java": "17"
+	}
+}
