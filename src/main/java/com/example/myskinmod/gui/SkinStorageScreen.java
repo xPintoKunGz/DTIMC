@@ -11,11 +11,12 @@ import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.render.entity.PlayerModelPart;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.client.toast.SystemToast;
 import net.minecraft.entity.EntityPose;
-import net.minecraft.entity.player.PlayerModelPart;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -38,15 +39,16 @@ public class SkinStorageScreen extends Screen {
     private ButtonWidget equipButton;
     private ButtonWidget deleteButton;
     private ButtonWidget toggleTypeButton;
+    private ButtonWidget backButton;
 
     // ระบบ Animation GUI (Slide Panel)
     private float animProgress = 0.0f; // 0.0 (ซ่อน) ถึง 1.0 (แสดงผลเต็มที่)
     private float targetAnim = 0.0f;
 
-    // ระบบ 3D Player Preview
+    // ระบบ 3D Player Preview (อิสระ + หมุนอัตโนมัติ)
     private ClientPlayerEntity previewPlayer;
-    private float previewMouseX = 0;
-    private float previewMouseY = 0;
+    private float previewRotation = 0.0f;
+    private boolean isDraggingPreview = false;
 
     public SkinStorageScreen(Screen parent) {
         super(Text.literal("Skin Storage Cloud"));
@@ -56,11 +58,13 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelX = width - 210;
-        int topY = 40;
+        int panelWidth = 210;
+        int startX = (width - 450) / 2;
+        int panelX = startX + 240;
+        int topY = (height - 240) / 2;
 
-        // ช่องพิมพ์แก้ไขชื่อสกิน
-        nameField = new TextFieldWidget(textRenderer, panelX + 15, topY + 145, 180, 20, Text.literal("Skin Name"));
+        // ช่องพิมพ์แก้ไขชื่อสกินโปรไฟล์
+        nameField = new TextFieldWidget(textRenderer, panelX + 15, topY + 140, 180, 20, Text.literal("Skin Name"));
         nameField.setMaxLength(32);
         nameField.setChangedListener(this::onNameChanged);
         this.addSelectableChild(nameField);
@@ -73,32 +77,36 @@ public class SkinStorageScreen extends Screen {
                 SkinStorageManager.updateSkin(entry.id, entry.name, newType);
                 createPreviewPlayerForSelected();
                 updateUIValues();
+                showToast(Text.literal("Skin Storage"), Text.literal("Model changed to: " + newType.toUpperCase()));
             }
-        }).dimensions(panelX + 15, topY + 170, 180, 20).build();
+        }).dimensions(panelX + 15, topY + 165, 180, 20).build();
         this.addDrawableChild(toggleTypeButton);
 
         // ปุ่มสวมใส่สกิน
         equipButton = ButtonWidget.builder(Text.literal("⚡ Equip Skin"), button -> {
             equipSelectedSkin();
-        }).dimensions(panelX + 15, topY + 195, 180, 20).build();
+        }).dimensions(panelX + 15, topY + 190, 180, 20).build();
         this.addDrawableChild(equipButton);
 
         // ปุ่มลบสกิน
         deleteButton = ButtonWidget.builder(Text.literal("🗑 Delete Skin"), button -> {
             SkinEntry entry = getSelectedEntry();
             if (entry != null) {
+                String deletedName = entry.name;
                 SkinStorageManager.deleteSkin(entry.id);
                 selectedIndex = -1;
                 targetAnim = 0.0f;
                 updateUIValues();
+                showToast(Text.literal("Skin Storage"), Text.literal("Deleted skin: " + deletedName));
             }
-        }).dimensions(panelX + 15, topY + 220, 180, 20).build();
+        }).dimensions(panelX + 15, topY + 215, 180, 20).build();
         this.addDrawableChild(deleteButton);
 
-        // ปุ่มย้อนกลับ
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+        // ปุ่มย้อนกลับ (วางด้านล่างกลางหน้าจอ)
+        backButton = ButtonWidget.builder(Text.literal("Back"), button -> {
             MinecraftClient.getInstance().setScreen(parent);
-        }).dimensions(20, height - 30, 100, 20).build());
+        }).dimensions((width - 100) / 2, height - 35, 100, 20).build();
+        this.addDrawableChild(backButton);
 
         loadAllTextures();
         updateUIValues();
@@ -135,6 +143,7 @@ public class SkinStorageScreen extends Screen {
         SkinEntry entry = getSelectedEntry();
         if (entry != null && !newName.trim().isEmpty() && !newName.equals(entry.name)) {
             SkinStorageManager.updateSkin(entry.id, newName.trim(), entry.modelType);
+            showToast(Text.literal("Skin Storage"), Text.literal("Renamed profile to: " + newName.trim()));
         }
     }
 
@@ -148,12 +157,12 @@ public class SkinStorageScreen extends Screen {
         }
     }
 
-    // สร้าง Dummy Player สำหรับเรนเดอร์ 3D Preview
+    // สร้าง Dummy Player สำหรับเรนเดอร์ 3D Preview (ไม่ขึ้นกับ Action ผู้เล่นจริง)
     private void createPreviewPlayerForSelected() {
         SkinEntry entry = getSelectedEntry();
         MinecraftClient client = MinecraftClient.getInstance();
 
-        if (entry != null && client.player != null) {
+        if (entry != null && client.world != null && client.player != null) {
             Identifier skinId = loadedTextures.get(entry.id);
             if (skinId != null) {
                 previewPlayer = new ClientPlayerEntity(
@@ -175,7 +184,13 @@ public class SkinStorageScreen extends Screen {
                     }
                     @Override public Text getName() { return Text.empty(); }
                 };
-                previewPlayer.copyFrom(client.player);
+
+                // รีเซ็ตการหมุนและแอนิเมชันให้อยู่ในสถานะนิ่ง
+                previewPlayer.setPitch(0.0f);
+                previewPlayer.setYaw(0.0f);
+                previewPlayer.bodyYaw = 0.0f;
+                previewPlayer.headYaw = 0.0f;
+                previewPlayer.limbAnimator.setSpeed(0.0f);
             }
         }
     }
@@ -199,6 +214,7 @@ public class SkinStorageScreen extends Screen {
                 byte[] bytes = Files.readAllBytes(path);
                 SkinNetworkHandler.sendSkinChunks(bytes);
 
+                showToast(Text.literal("Skin Storage"), Text.literal("Equipped: " + entry.name));
                 client.setScreen(null);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -206,32 +222,54 @@ public class SkinStorageScreen extends Screen {
         }
     }
 
+    // แสดงการแจ้งเตือน Toast มุมขวาบน
+    private void showToast(Text title, Text description) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.getToastManager() != null) {
+            SystemToast.add(client.getToastManager(), SystemToast.Type.PERIODIC_NOTIFICATION, title, description);
+        }
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int leftX = 20;
-        int topY = 40;
+        int totalWidth = 450;
+        int startX = (width - totalWidth) / 2;
+        int leftX = startX;
+        int topY = (height - 240) / 2;
         var entries = SkinStorageManager.getEntries();
 
-        // ตรวจจับการคลิกเลือกรายการสกินในคลัง
+        // ตรวจจับการคลิกเลือกรายการสกินในคลังฝั่งซ้าย
         for (int i = 0; i < entries.size(); i++) {
             int itemY = topY + (i * 36);
             if (mouseX >= leftX && mouseX <= leftX + 220 && mouseY >= itemY && mouseY < itemY + 32) {
                 selectedIndex = i;
-                targetAnim = 1.0f; // เล่น Animation สไลด์แผงรายละเอียดออกมา
+                targetAnim = 1.0f;
                 createPreviewPlayerForSelected();
                 updateUIValues();
                 return true;
             }
         }
+
+        // ตรวจจับการคลิกบริเวณ 3D Preview เพื่อเริ่มลากหมุนตัวละคร
+        int panelX = startX + 240;
+        if (selectedIndex >= 0 && mouseX >= panelX && mouseX <= panelX + 210 && mouseY >= topY && mouseY <= topY + 130) {
+            isDraggingPreview = true;
+            return true;
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        isDraggingPreview = false;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        // ให้ผู้ใช้สามารถลากเมาส์หมุนตัวละคร 3D Preview ได้
-        if (selectedIndex >= 0 && mouseX >= width - 210) {
-            previewMouseX -= deltaX * 2.5f;
-            previewMouseY -= deltaY * 2.5f;
+        if (isDraggingPreview && selectedIndex >= 0) {
+            previewRotation -= deltaX * 2.5f;
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -241,12 +279,17 @@ public class SkinStorageScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context);
 
-        // คำนวณ Smooth Animation Interpolation
+        // คำนวณ Smooth Animation
         animProgress += (targetAnim - animProgress) * 0.2f;
 
-        // อัปเดตตำแหน่งซ่อน/แสดงของ Widget ตามค่า Animation
+        // คำนวณจุดกึ่งกลาง Layout สัมพัทธ์กับ Resolution จอภาพ
+        int totalWidth = 450;
+        int startX = (width - totalWidth) / 2;
+        int topY = (height - 240) / 2;
+
         int panelWidth = 210;
-        int currentPanelX = (int) (width - (panelWidth * animProgress));
+        int basePanelX = startX + 240;
+        int currentPanelX = basePanelX + (int) ((1.0f - animProgress) * 50);
 
         boolean showPanel = animProgress > 0.05f;
         nameField.setVisible(showPanel);
@@ -258,16 +301,20 @@ public class SkinStorageScreen extends Screen {
         deleteButton.visible = showPanel;
         deleteButton.setX(currentPanelX + 15);
 
+        // อัปเดตการหมุนตัวละคร 3D Preview อัตโนมัติเมื่อไม่ได้กดลาก
+        if (!isDraggingPreview && previewPlayer != null) {
+            previewRotation += delta * 1.5f;
+        }
+
         super.render(context, mouseX, mouseY, delta);
 
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Skin Storage Cloud"), width / 2, 15, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Skin Storage Cloud"), width / 2, Math.max(10, topY - 25), 0xFFFFFF);
 
-        int leftX = 20;
-        int topY = 40;
+        int leftX = startX;
         var entries = SkinStorageManager.getEntries();
 
         // ===================== ฝั่งซ้าย: รายชื่อสกิน (พร้อมลำดับเลขที่) =====================
-        context.fill(leftX - 2, topY - 2, leftX + 222, topY + 200, 0x66000000);
+        context.fill(leftX - 2, topY - 2, leftX + 222, topY + 230, 0x66000000);
 
         if (entries.isEmpty()) {
             context.drawText(textRenderer, "No saved skins yet.", leftX + 10, topY + 10, 0xAAAAAA, false);
@@ -279,7 +326,7 @@ public class SkinStorageScreen extends Screen {
                 int bgColor = (i == selectedIndex) ? 0xAA335588 : 0x44000000;
                 context.fill(leftX, itemY, leftX + 220, itemY + 32, bgColor);
 
-                // 🔢 1. แสดงลำดับเลขที่สกิน (#1, #2, #3...)
+                // 1. แสดงลำดับเลขที่สกิน (#1, #2, #3...)
                 String orderTag = "#" + (i + 1);
                 context.drawText(textRenderer, orderTag, leftX + 6, itemY + 12, 0xFFFFAA00, true);
 
@@ -290,35 +337,44 @@ public class SkinStorageScreen extends Screen {
                     context.drawTexture(textureId, leftX + 28, itemY + 4, 24, 24, 40.0f, 8.0f, 8, 8, 64, 64);
                 }
 
-                // 3. ชื่อและวันที่สร้าง
+                // 3. ชื่อและประเภทโมเดล
                 String displayName = entry.name.length() > 14 ? entry.name.substring(0, 12) + ".." : entry.name;
                 context.drawText(textRenderer, displayName, leftX + 58, itemY + 5, 0xFFFFFF, false);
                 context.drawText(textRenderer, entry.createdDate + " (" + entry.modelType + ")", leftX + 58, itemY + 18, 0xAAAAAA, false);
             }
         }
 
-        // ===================== ฝั่งขวา: แผงควบคุมรายละเอียด + 3D Preview (Animation Slide) =====================
+        // ===================== ฝั่งขวา: แผงรายละเอียด + 3D Preview =====================
         if (showPanel) {
-            int panelY = 40;
-            context.fill(currentPanelX, panelY - 2, currentPanelX + panelWidth, panelY + 250, 0xBB111111);
-            context.fill(currentPanelX, panelY - 2, currentPanelX + 2, panelY + 250, 0xFF5588FF); // ขอบฟ้าสวยงาม
+            context.fill(currentPanelX, topY - 2, currentPanelX + panelWidth, topY + 240, 0xBB111111);
+            context.fill(currentPanelX, topY - 2, currentPanelX + 2, topY + 240, 0xFF5588FF);
 
             SkinEntry entry = getSelectedEntry();
             if (entry != null) {
-                context.drawCenteredTextWithShadow(textRenderer, "Skin Details " + "#" + (selectedIndex + 1), currentPanelX + (panelWidth / 2), panelY + 8, 0xFFFFAA00);
+                context.drawCenteredTextWithShadow(textRenderer, "Skin Details #" + (selectedIndex + 1), currentPanelX + (panelWidth / 2), topY + 8, 0xFFFFAA00);
 
-                // 🧍 3D Interactive Player Preview
+                // 🧍 3D Player Preview อิสระ
                 if (previewPlayer != null) {
                     int previewX = currentPanelX + (panelWidth / 2);
-                    int previewY = panelY + 130;
-                    int scale = 48;
+                    int previewY = topY + 125;
+                    int scale = 45;
 
-                    // วาดโมเดลผู้เล่น 3D
+                    // ปรับแต่งทิศทางหัวและลำตัวให้หมุนตามมุมมอง previewRotation
+                    previewPlayer.setPitch(0.0f);
+                    previewPlayer.setYaw(previewRotation);
+                    previewPlayer.bodyYaw = previewRotation;
+                    previewPlayer.headYaw = previewRotation;
+                    previewPlayer.prevBodyYaw = previewRotation;
+                    previewPlayer.prevYaw = previewRotation;
+                    previewPlayer.prevHeadYaw = previewRotation;
+
+                    float lookX = previewX + (float) Math.sin(Math.toRadians(previewRotation)) * 80.0f;
+                    float lookY = previewY - 25.0f;
+
                     InventoryScreen.drawEntity(
                             context,
                             previewX, previewY, scale,
-                            previewX - previewMouseX,
-                            previewY - 50 - previewMouseY,
+                            lookX, lookY,
                             previewPlayer
                     );
                 }

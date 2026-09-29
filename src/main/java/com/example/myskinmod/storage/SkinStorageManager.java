@@ -74,9 +74,6 @@ public class SkinStorageManager {
         }
     }
 
-    /**
-     * เพิ่มสกินใหม่ลงใน Storage
-     */
     public static SkinEntry addSkin(String name, String modelType, NativeImage image) {
         String id = UUID.randomUUID().toString();
         String fileName = "skin_" + System.currentTimeMillis() + ".png";
@@ -95,9 +92,6 @@ public class SkinStorageManager {
         }
     }
 
-    /**
-     * ลบสกินออกจาก Storage
-     */
     public static void deleteSkin(String id) {
         SkinEntry toRemove = null;
         for (SkinEntry entry : entries) {
@@ -117,9 +111,6 @@ public class SkinStorageManager {
         }
     }
 
-    /**
-     * อัปเดตข้อมูลสกิน (เปลี่ยนชื่อ หรือ เปลี่ยนประเภทโมเดล)
-     */
     public static void updateSkin(String id, String newName, String newModelType) {
         for (SkinEntry entry : entries) {
             if (entry.id.equals(id)) {

@@ -1,5 +1,6 @@
 package com.example.myskinmod;
 
+import com.example.myskinmod.gui.SkinStorageScreen;
 import com.example.myskinmod.util.SkinNetworkHandler;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -38,7 +39,7 @@ public class SkinChangerScreen extends Screen {
     private String currentModelType = "default";
     private long windowHandle;
     private boolean dragDropInitialized = false;
-    private static final String MOD_CHANGELOG = "Updated: Added Error Toasts & 64x32 resolution support.";
+    private static final String MOD_CHANGELOG = "Updated: Skin Cloud Storage & 3D Interactive Preview Added.";
 
     public SkinChangerScreen() {
         super(Text.literal("NUI Unified Interface - Menu"));
@@ -69,6 +70,7 @@ public class SkinChangerScreen extends Screen {
             openFileExplorer();
         }).position(centerX + 85, centerY + 25).size(65, 20).build());
 
+        // ปุ่ม Load Skin
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Load Skin"), button -> {
             String input = this.urlField.getText().trim();
             if (input.isEmpty()) {
@@ -83,11 +85,17 @@ public class SkinChangerScreen extends Screen {
                 currentSkinUrl = null;
                 loadFromFile(input);
             }
-        }).position(centerX - 100, centerY + 70).size(200, 20).build());
+        }).position(centerX - 100, centerY + 50).size(200, 20).build());
 
+        // 📦 ปุ่มเปิดคลังสกิน Skin Storage Cloud
+        this.addDrawableChild(ButtonWidget.builder(Text.literal("Skin Storage Cloud"), button -> {
+            client.setScreen(new SkinStorageScreen(this));
+        }).position(centerX - 100, centerY + 75).size(200, 20).build());
+
+        // ปุ่ม Close
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Close"), button -> {
             close();
-        }).position(centerX - 100, centerY + 95).size(200, 20).build());
+        }).position(centerX - 100, centerY + 100).size(200, 20).build());
     }
 
     private void openFileExplorer() {

@@ -1,8 +1,9 @@
 package com.example.myskinmod;
 
 import com.example.myskinmod.util.SkinNetworkHandler;
+import com.example.myskinmod.storage.SkinStorageManager;
+import com.example.myskinmod.gui.SkinStorageScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.*;
 import net.minecraft.client.render.entity.PlayerModelPart;
 import org.joml.Quaternionf;
 import net.minecraft.client.MinecraftClient;
@@ -168,6 +169,14 @@ public class SkinTypeSelectionScreen extends Screen {
         }
 
         int buttonStartY = height / 2 + 75;
+
+        this.addDrawableChild(ButtonWidget.builder(Text.literal("Save to Storage"), button -> {
+            if (this.skinImage != null) {
+                String defaultName = "My Skin " + (SkinStorageManager.getEntries().size() + 1);
+                SkinStorageManager.addSkin(defaultName, currentModelType, this.skinImage);
+                showSkinToast("บันทึกแล้ว!", "บันทึกสกินลงคลังเรียบร้อย", "success", previewSkinId);
+            }
+        }).dimensions(width / 2 - 105, buttonStartY + 75, 210, 20).build());
 
         // --- แก้ไขปุ่ม Classic ---
         classicButton = new CustomStyledButton(width / 2 - 105, buttonStartY, 100, 20, Text.literal("Classic (Steve)"), button -> {
