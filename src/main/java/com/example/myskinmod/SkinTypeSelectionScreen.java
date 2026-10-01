@@ -168,24 +168,19 @@ public class SkinTypeSelectionScreen extends Screen {
             loadAndPreviewSkin(skinUrl);
         }
 
-        int buttonStartY = height / 2 + 75;
+        int buttonWidth = 210;
+        int halfWidth = 102;
+        int startX = width / 2 - (buttonWidth / 2);
+        int rightX = startX + buttonWidth - halfWidth;
+        int buttonStartY = height / 2 + 48; // ปรับระดับความสูงปุ่มให้อยู่ในระยะที่พอดี
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Save to Storage"), button -> {
-            if (this.skinImage != null) {
-                String defaultName = "My Skin " + (SkinStorageManager.getEntries().size() + 1);
-                SkinStorageManager.addSkin(defaultName, currentModelType, this.skinImage);
-                showSkinToast("บันทึกแล้ว!", "บันทึกสกินลงคลังเรียบร้อย", "success", previewSkinId);
-            }
-        }).dimensions(width / 2 - 105, buttonStartY + 75, 210, 20).build());
-
-        // --- แก้ไขปุ่ม Classic ---
-        classicButton = new CustomStyledButton(width / 2 - 105, buttonStartY, 100, 20, Text.literal("Classic (Steve)"), button -> {
+        // --- แถวที่ 1: เลือกประเภทโมเดล ---
+        classicButton = new CustomStyledButton(startX, buttonStartY, halfWidth, 20, Text.literal("Classic (Steve)"), button -> {
             currentModelType = "default";
             updateModelButtons();
         }, false);
 
-        // --- แก้ไขปุ่ม Slim ---
-        slimButton = new CustomStyledButton(width / 2 + 5, buttonStartY, 100, 20, Text.literal("Slim (Alex)"), button -> {
+        slimButton = new CustomStyledButton(rightX, buttonStartY, halfWidth, 20, Text.literal("Slim (Alex)"), button -> {
             currentModelType = "slim";
             updateModelButtons();
         }, false);
@@ -193,15 +188,30 @@ public class SkinTypeSelectionScreen extends Screen {
         this.addDrawableChild(classicButton);
         this.addDrawableChild(slimButton);
 
-        // --- แก้ไขปุ่ม Confirm ---
-        this.addDrawableChild(new CustomStyledButton(width / 2 - 105, buttonStartY + 25, 210, 20, Text.literal("Confirm Skin!"), button -> {
+        // --- แถวที่ 2: ปุ่มConfirm และ Save to Storage (วางคู่กัน) ---
+        this.addDrawableChild(new CustomStyledButton(startX, buttonStartY + 24, halfWidth, 20, Text.literal("Confirm Skin!"), button -> {
             confirmed = true;
             applySkin(currentModelType);
-        }, true)); // ใส่ true เพราะเป็นปุ่มยืนยัน
+        }, true));
 
-        // --- แก้ไขปุ่ม Back ---
-        this.addDrawableChild(new CustomStyledButton(width / 2 - 105, buttonStartY + 50, 210, 20, Text.literal("Back"), button -> {
-            MinecraftClient.getInstance().setScreen(parent);
+        this.addDrawableChild(new CustomStyledButton(rightX, buttonStartY + 24, halfWidth, 20, Text.literal("Save to Storage"), button -> {
+            if (this.skinImage != null) {
+                String defaultName = "My Skin " + (SkinStorageManager.getEntries().size() + 1);
+                SkinStorageManager.addSkin(defaultName, currentModelType, this.skinImage);
+                showSkinToast("บันทึกแล้ว!", "บันทึกสกินลงคลังเรียบร้อย", "success", previewSkinId);
+
+                // ✅ ปิดหน้าต่าง GUI ทันทีหลังจากเซฟลงคลังเสร็จ
+                if (this.client != null) {
+                    this.client.setScreen(null);
+                }
+            }
+        }, false));
+
+        // --- แถวที่ 3: ปุ่ม Back (เต็มความกว้าง) ---
+        this.addDrawableChild(new CustomStyledButton(startX, buttonStartY + 48, buttonWidth, 20, Text.literal("Back"), button -> {
+            if (this.client != null) {
+                this.client.setScreen(parent);
+            }
         }, false));
 
         updateModelButtons();
@@ -253,9 +263,9 @@ public class SkinTypeSelectionScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
 
         int boxWidth = 160;
-        int boxHeight = 180;
+        int boxHeight = 155;
         int boxX = width / 2 - boxWidth / 2;
-        int boxY = height / 2 - boxHeight / 2 - 25;
+        int boxY = height / 2 - 115;
 
         // 1. วาดกรอบ Player Model หลัก
         context.fill(boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0x66000000);
@@ -268,22 +278,19 @@ public class SkinTypeSelectionScreen extends Screen {
         context.fill(headBoxX, headBoxY, headBoxX + headBoxSize, headBoxY + headBoxSize, 0x66000000);
         drawDashedBorder(context, headBoxX - 1, headBoxY - 1, headBoxSize + 2, headBoxSize + 2, 0xFFFFFFFF);
 
-        // วาดรูปหน้าผู้เล่นใน Profile Box พร้อมดัน Z-index ให้มาหน้าสุด
         if (previewSkinId != null && skinImage != null) {
             int imgW = skinImage.getWidth();
             int imgH = skinImage.getHeight();
             float scale = imgW / 64.0f;
 
             context.getMatrices().push();
-            context.getMatrices().translate(0, 0, 500.0f); // ดันไปหน้าสุด
-            // ส่วนใบหน้าชั้นใน (Face)
+            context.getMatrices().translate(0, 0, 500.0f);
             context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 8.0f * scale, 8.0f * scale, (int)(8 * scale), (int)(8 * scale), imgW, imgH);
-            // ส่วนใบหน้าชั้นนอก (Hat Layer)
             context.drawTexture(previewSkinId, headBoxX + 5, headBoxY + 5, 32, 32, 40.0f * scale, 8.0f * scale, (int)(8 * scale), (int)(8 * scale), imgW, imgH);
             context.getMatrices().pop();
         }
 
-        // ===================== เพิ่มช่องเส้นประสำหรับ Full Texture (รูปแผ่นสกิน) ด้านซ้าย =====================
+        // 3. วาดช่อง Full Texture ด้านซ้าย
         int texBoxSize = 42;
         int texBoxX = boxX - texBoxSize - 8;
         int texBoxY = boxY;
@@ -296,31 +303,29 @@ public class SkinTypeSelectionScreen extends Screen {
 
             context.getMatrices().push();
             context.getMatrices().translate(0, 0, 500.0f);
-            // วาดรูปแผ่นสกินทั้งหมด (Full Texture Layout) ลงในช่อง
             context.drawTexture(previewSkinId, texBoxX + 3, texBoxY + 3, texBoxSize - 6, texBoxSize - 6, 0.0f, 0.0f, imgW, imgH, imgW, imgH);
             context.getMatrices().pop();
         }
-        // ==============================================================================================
 
-        // วาดข้อความต่างๆ
+        // ข้อความรายละเอียด
         if (skinSource != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(skinSource), width / 2, boxY - 30, 0x55FF55);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(skinSource), width / 2, boxY - 22, 0x55FF55);
         }
 
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Skin Preview (Drag to rotate)"), width / 2, boxY + 10, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Skin Preview (Drag to rotate)"), width / 2, boxY + 8, 0xFFFFFF);
 
         if (skinImage != null) {
             context.drawCenteredTextWithShadow(
                     this.textRenderer,
                     Text.literal("Type: " + currentModelType.toUpperCase() + " (" + skinImage.getWidth() + "x" + skinImage.getHeight() + ")"),
                     width / 2,
-                    boxY + 25,
+                    boxY + 22,
                     0xAAAAAA
             );
         }
 
-        // วาดโมเดลผู้เล่นในกรอบหลัก (ฟังก์ชันนี้มีการตั้งค่า Z-index หน้าสุดแล้ว)
-        render3DPreview(context, width / 2, boxY + boxHeight - 25);
+        // วาดโมเดลผู้เล่นในกรอบหลัก
+        render3DPreview(context, width / 2, boxY + boxHeight - 20);
     }
 
     private void render3DPreview(DrawContext context, int x, int y) {
@@ -350,7 +355,7 @@ public class SkinTypeSelectionScreen extends Screen {
             InventoryScreen.drawEntity(
                     context,
                     x, y,
-                    60,
+                    50,
                     bodyRotation,
                     null,
                     previewPlayer
@@ -617,7 +622,7 @@ public class SkinTypeSelectionScreen extends Screen {
             this.skinId = skinId;
         }
 
-        @Override // แก้จาก draw(DrawContext context, ...) เป็นแบบนี้
+        @Override
         public Visibility draw(DrawContext context, ToastManager manager, long startTime) {
             int backgroundColor = 0xDD441111;
             int borderColor = 0xFF55FF55;
@@ -641,6 +646,7 @@ public class SkinTypeSelectionScreen extends Screen {
 
             float progress = 1.0f - ((float) startTime / (float) TOTAL_TIME);
             int progressBarWidth = (int) (158 * progress);
+
             if (progressBarWidth > 0) {
                 context.fill(1, 29, 1 + progressBarWidth, 31, progressColor);
             }
@@ -660,7 +666,6 @@ public class SkinTypeSelectionScreen extends Screen {
         }
     }
 
-    // --- แก้ไขจุดที่ 2: CustomStyledButton (แบบ Inner Class เพื่อแก้ Duplicate) ---
     private static class CustomStyledButton extends ButtonWidget {
         private final boolean isConfirmButton;
 
@@ -678,7 +683,6 @@ public class SkinTypeSelectionScreen extends Screen {
             int x2 = x1 + this.width;
             int y2 = y1 + this.height;
 
-            // Logic สีเดิมของมิว
             int backgroundColor = 0xAA000000;
             int borderColor = 0x44FFFFFF;
             int textColor = 0xFFFFFFFF;
@@ -692,7 +696,6 @@ public class SkinTypeSelectionScreen extends Screen {
                 textColor = 0xFFFFFF55;
             }
 
-            // วาด UI
             context.fill(x1, y1, x2, y2, backgroundColor);
             context.fill(x1, y1, x2, y1 + 1, borderColor);
             context.fill(x1, y2 - 1, x2, y2, borderColor);

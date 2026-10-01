@@ -54,11 +54,24 @@ public class SkinChangerScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
+        int totalWidth = 290;
+        int halfWidth = 142;
+        int startX = centerX - (totalWidth / 2);
+        int rightX = startX + totalWidth - halfWidth;
+
+        // 🎯 1. กำหนดอิงจากพิกเซลเดียวกับ render()
+        int boxY = centerY - 90;
+        int boxHeight = 64;
+
+        // 🎯 2. วางตำแหน่ง Y ของ urlField ไว้ใต้ข้อความเตือน (boxY + boxHeight + 28px)
+        int inputY = boxY + boxHeight + 28; // เท่ากับ centerY + 2
+
+        // ช่องใส่ URL หรือ Path ไฟล์
         this.urlField = new TextFieldWidget(
                 this.textRenderer,
-                centerX - 150,
-                centerY + 25,
-                230,
+                startX,
+                inputY,
+                218,
                 20,
                 Text.literal("")
         );
@@ -66,12 +79,13 @@ public class SkinChangerScreen extends Screen {
         this.urlField.setPlaceholder(Text.literal("Paste URL or File Path here..."));
         this.addDrawableChild(this.urlField);
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("📂 Browse"), button -> {
+        // ปุ่ม 📂 Browse (เรียงตามแนว Y เดียวกับ urlField)
+        this.addDrawableChild(new CustomStyledButton(startX + 224, inputY, 66, 20, Text.literal("📂 Browse"), button -> {
             openFileExplorer();
-        }).position(centerX + 85, centerY + 25).size(65, 20).build());
+        }, false));
 
-        // ปุ่ม Load Skin
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Load Skin"), button -> {
+        // --- ปุ่มกดแถวที่ 1: Load Skin (ต่อจากช่องกรอก URL 26px) ---
+        this.addDrawableChild(new CustomStyledButton(startX, inputY + 26, totalWidth, 20, Text.literal("Load Skin"), button -> {
             String input = this.urlField.getText().trim();
             if (input.isEmpty()) {
                 showErrorToast("Input Error", "Please enter a URL or file path");
@@ -85,17 +99,21 @@ public class SkinChangerScreen extends Screen {
                 currentSkinUrl = null;
                 loadFromFile(input);
             }
-        }).position(centerX - 100, centerY + 70).size(200, 20).build());
+        }, true));
 
-        // 📦 ปุ่มเปิดคลังสกิน Skin Storage Cloud
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Skin Storage Cloud"), button -> {
+        // --- ปุ่มกดแถวที่ 2: Skin Storage Cloud และ Options ---
+        this.addDrawableChild(new CustomStyledButton(startX, inputY + 50, halfWidth, 20, Text.literal("Skin Storage Cloud"), button -> {
             client.setScreen(new SkinStorageScreen(this));
-        }).position(centerX - 100, centerY + 95).size(200, 20).build());
+        }, false));
 
-        // ปุ่ม Close
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Close"), button -> {
+        this.addDrawableChild(new CustomStyledButton(rightX, inputY + 50, halfWidth, 20, Text.literal("Options"), button -> {
+            // TODO: โค้ดสำหรับเมนู Options ในอนาคต
+        }, false));
+
+        // --- ปุ่มกดแถวที่ 3: ปุ่ม Close ---
+        this.addDrawableChild(new CustomStyledButton(startX, inputY + 74, totalWidth, 20, Text.literal("Close"), button -> {
             close();
-        }).position(centerX - 100, centerY + 120).size(200, 20).build());
+        }, false));
     }
 
     private void openFileExplorer() {
@@ -244,7 +262,6 @@ public class SkinChangerScreen extends Screen {
         }).start();
     }
 
-    // ฟังก์ชันรวมสำหรับตรวจสอบขนาดสกินและรันหน้าต่างต่อไป
     private void validateAndLoadImage(NativeImage image, String sourceUrl) {
         if (image == null) {
             showErrorToast("Invalid Image", "Image file is corrupted or empty.");
@@ -255,7 +272,6 @@ public class SkinChangerScreen extends Screen {
             int width = image.getWidth();
             int height = image.getHeight();
 
-            // --- เช็คสัดส่วนสกินแบบ 1:1 (Modern) และ 2:1 (Classic) ---
             boolean isModernSize = (width == height) && (width >= 64 && width <= 8192);
             boolean isClassicSize = (width == height * 2) && (width >= 64 && width <= 1024);
 
@@ -309,7 +325,7 @@ public class SkinChangerScreen extends Screen {
         });
     }
 
-    // ===================== ระบบ Error Toast =====================
+    // ===================== ระบบ Error Toast สไตล์ Custom =====================
     private void showErrorToast(String title, String message) {
         client.execute(() -> {
             if (client.getToastManager() != null) {
@@ -322,8 +338,12 @@ public class SkinChangerScreen extends Screen {
     }
 
     private static class SkinErrorToast implements net.minecraft.client.toast.Toast {
+        // 🎯 1. กำหนดตำแหน่งไฟล์รูปภาพไอคอน
+        private static final Identifier ERROR_ICON = new Identifier("myskinmod", "textures/gui/decline.png");
+
         private final String title;
         private final String message;
+        private final long TOTAL_TIME = 5000L;
 
         public SkinErrorToast(String title, String message) {
             this.title = title;
@@ -332,22 +352,38 @@ public class SkinChangerScreen extends Screen {
 
         @Override
         public net.minecraft.client.toast.Toast.Visibility draw(DrawContext context, net.minecraft.client.toast.ToastManager manager, long startTime) {
-            context.fill(0, 0, 160, 32, 0xDD441111); // พื้นหลังแดงเข้ม
-            context.fill(0, 0, 160, 1, 0xFFFF5555); // ขอบแดงสว่าง
-            context.fill(0, 31, 160, 32, 0xFFFF5555);
-            context.fill(0, 0, 1, 32, 0xFFFF5555);
-            context.fill(159, 0, 160, 32, 0xFFFF5555);
+            int backgroundColor = 0xDD441111;
+            int borderColor = 0xFFFF5555;
+            int progressColor = 0xFFAA2222;
 
-            context.drawText(manager.getClient().textRenderer, this.title, 8, 7, 0xFFFF5555, false);
+            // วาดพื้นหลังและขอบ Toast
+            context.fill(0, 0, 160, 32, backgroundColor);
+            context.fill(0, 0, 160, 1, borderColor);
+            context.fill(0, 31, 160, 32, borderColor);
+            context.fill(0, 0, 1, 32, borderColor);
+            context.fill(159, 0, 160, 32, borderColor);
 
-            // ตัดคำถ้ายาวเกินไปจะได้ไม่ล้น Toast
-            String displayMsg = this.message.length() > 25 ? this.message.substring(0, 22) + "..." : this.message;
-            context.drawText(manager.getClient().textRenderer, displayMsg, 8, 18, 0xFFFFFFFF, false);
+            // 🎯 2. วาดรูปภาพไอคอน (ขนาด 16x16 พิกเซล ที่ตำแหน่ง X=6, Y=8)
+            // drawTexture(Identifier, x, y, u, v, width, height, textureWidth, textureHeight)
+            context.drawTexture(ERROR_ICON, 6, 8, 0, 0, 16, 16, 16, 16);
 
-            return startTime >= 5000L ? Visibility.HIDE : Visibility.SHOW;
+            // คำนวณหลอดเวลานับถอยหลัง Progress Bar
+            float progress = 1.0f - ((float) startTime / (float) TOTAL_TIME);
+            int progressBarWidth = (int) (158 * progress);
+            if (progressBarWidth > 0) {
+                context.fill(1, 29, 1 + progressBarWidth, 31, progressColor);
+            }
+
+            // 🎯 3. แสดงข้อความ Title (ขยับ X จาก 8 เป็น 26 เพื่อหลบไอคอน)
+            context.drawText(manager.getClient().textRenderer, this.title, 26, 6, borderColor, false);
+
+            // แสดงข้อความ Message ด้านล่างไอคอน/ข้อความ
+            String displayMsg = this.message.length() > 22 ? this.message.substring(0, 19) + "..." : this.message;
+            context.drawText(manager.getClient().textRenderer, displayMsg, 26, 17, 0xFFE0E0E0, false);
+
+            return startTime >= TOTAL_TIME ? Visibility.HIDE : Visibility.SHOW;
         }
     }
-    // =========================================================
 
     private void drawDashedBorder(DrawContext context, int x, int y, int width, int height, int color) {
         int dashLength = 4;
@@ -367,33 +403,39 @@ public class SkinChangerScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 20, 0xFFFFFF);
+        // 1. หัวข้อหน้าต่าง (Title ด้านบนสุด)
+        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 15, 0xFFFFFF);
 
+        // 2. ขนาดและตำแหน่งกรอบ Drag & Drop
         int boxWidth = 340;
-        int boxHeight = 140;
+        int boxHeight = 64; // ความสูงที่พอดีกับเนื้อหาภายในกรอบ 4 บรรทัด
         int boxX = this.width / 2 - boxWidth / 2;
-        int boxY = this.height / 2 - 80;
+        int boxY = this.height / 2 - 90; // ขยับขึ้นเล็กน้อยเพื่อเผื่อพื้นที่ให้ช่องใส่ URL และปุ่มกดด้านล่าง
 
+        // 3. แสดง Path ไฟล์ที่ถูก Drag & Drop (ถ้ามี จะแสดงสีเขียวเหนือกรอบ)
+        if (droppedFilePath != null) {
+            String displayPath = droppedFilePath.length() > 45 ? droppedFilePath.substring(0, 42) + "..." : droppedFilePath;
+            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Selected: " + displayPath), this.width / 2, boxY - 14, 0x55FF55);
+        }
+
+        // 4. วาดพื้นหลังและขอบประของกรอบ Drag & Drop
         context.fill(boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0x44000000);
         drawDashedBorder(context, boxX, boxY, boxWidth, boxHeight, 0xFFAAAAAA);
 
-        int textY = boxY + 15;
-        context.drawCenteredTextWithShadow(this.textRenderer, "Drag & Drop your skin file here", this.width / 2, textY, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(this.textRenderer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━", this.width / 2, textY + 12, 0x44FFFFFF);
+        // 5. ข้อความภายในกรอบ Drag & Drop (จัดระยะ Y ห่างกันบรรทัดละ 11-12px)
+        context.drawCenteredTextWithShadow(this.textRenderer, "Drag & Drop your skin file here", this.width / 2, boxY + 9, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━", this.width / 2, boxY + 20, 0x44FFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, "Supports: PNG, JPG (Max 10MB)", this.width / 2, boxY + 32, 0xAAAAAA);
+        context.drawCenteredTextWithShadow(this.textRenderer, "Resolution: 64x64 to 8192x8192 | 64x32 to 1024x512", this.width / 2, boxY + 44, 0x888888);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, "Supports: PNG, JPG (Max 10MB)", this.width / 2, textY + 28, 0xAAAAAA);
-        context.drawCenteredTextWithShadow(this.textRenderer, "Resolution: 64x64 to 8192x8192 | 64x32 to 1024x512", this.width / 2, textY + 40, 0x888888);
+        // 6. ข้อความกำกับด้านล่างกรอบ (เว้นระยะ 12px นอกกรอบ สำหรับเป็นหัวข้อของช่อง URL)
+        context.drawCenteredTextWithShadow(this.textRenderer, "Or use a direct image link below:", this.width / 2, boxY + boxHeight + 12, 0xAAAAAA);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, "Or use a direct image link below:", this.width / 2, textY + 60, 0xAAAAAA);
-
-        if (droppedFilePath != null) {
-            String displayPath = droppedFilePath.length() > 45 ? droppedFilePath.substring(0, 42) + "..." : droppedFilePath;
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(displayPath), this.width / 2, boxY - 15, 0x55FF55);
-        }
-
+        // 7. วาดปุ่มกดและ TextFieldWidget ทั้งหมด (ผ่าน super.render)
         super.render(context, mouseX, mouseY, delta);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(MOD_CHANGELOG), this.width / 2, this.height - 20, 0x666666);
+        // 8. แสดง Changelog ด้านล่างสุดของหน้าจอ
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(MOD_CHANGELOG), this.width / 2, this.height - 18, 0x666666);
     }
 
     private String droppedFilePath = null;
@@ -416,5 +458,47 @@ public class SkinChangerScreen extends Screen {
             this.loadFromUrl(url);
         }
         return this;
+    }
+
+    // ===================== ปุ่ม Custom Style =====================
+    private static class CustomStyledButton extends ButtonWidget {
+        private final boolean isConfirmButton;
+
+        public CustomStyledButton(int x, int y, int width, int height, Text message, PressAction onPress, boolean isConfirm) {
+            super(x, y, width, height, message, onPress, DEFAULT_NARRATION_SUPPLIER);
+            this.isConfirmButton = isConfirm;
+        }
+
+        @Override
+        public void renderButton(DrawContext context, int mouseX, int mouseY, float delta) {
+            if (!this.visible) return;
+
+            int x1 = this.getX();
+            int y1 = this.getY();
+            int x2 = x1 + this.width;
+            int y2 = y1 + this.height;
+
+            int backgroundColor = 0xAA000000;
+            int borderColor = 0x44FFFFFF;
+            int textColor = 0xFFFFFFFF;
+
+            if (!this.active) {
+                backgroundColor = isConfirmButton ? 0xAA22AA22 : 0xAA55FF55;
+                borderColor = 0xFF55FF55;
+            } else if (this.isSelected()) {
+                backgroundColor = isConfirmButton ? 0xDD228822 : 0x6655FF55;
+                borderColor = 0xFFFFFFFF;
+                textColor = 0xFFFFFF55;
+            }
+
+            context.fill(x1, y1, x2, y2, backgroundColor);
+            context.fill(x1, y1, x2, y1 + 1, borderColor);
+            context.fill(x1, y2 - 1, x2, y2, borderColor);
+            context.fill(x1, y1, x1 + 1, y2, borderColor);
+            context.fill(x2 - 1, y1, x2, y2, borderColor);
+
+            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer,
+                    this.getMessage(), (x1 + x2) / 2, y1 + (this.height - 8) / 2, textColor);
+        }
     }
 }
