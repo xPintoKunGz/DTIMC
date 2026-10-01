@@ -8,6 +8,6 @@ public class MySkinModServer implements ModInitializer {
     public void onInitialize() {
         SkinNetworkHandler.registerServer();
 
-        System.out.println("NUI: Server-side networking initialized!");
+        System.out.println("Devathip Skin: Server-side networking initialized!");
     }
 }

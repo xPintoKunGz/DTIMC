@@ -1,15 +1,16 @@
 {
 	"schemaVersion": 1,
-	"id": "myskinmod",
+	"id": "dtimc_skin",
 	"version": "1.0.0",
-	"name": "NUI",
+	"name": "Devathip Skin",
 	"description": "A mod to change your Minecraft skin from an in-game menu.",
 	"authors": [
+		"Bloomery Network Team",
 		"xPintoKunG_Z"
 	],
 	"contact": {
 		"homepage": "https://example.com",
-		"sources": "https://github.com/xPintoKunGz/NUI"
+		"sources": "https://github.com/xPintoKunGz/DTIMC"
 	},
 	"license": "MIT",
 	"icon": "assets/myskinmod/icon.png",
@@ -22,7 +23,7 @@
 		"myskinmod.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.14.21",
+		"fabricloader": ">=0.16.10",
 		"fabric-api": "*",
 		"minecraft": "1.20.1",
 		"java": "17"

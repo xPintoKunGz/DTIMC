@@ -85,17 +85,17 @@ public class SkinChangerScreen extends Screen {
                 currentSkinUrl = null;
                 loadFromFile(input);
             }
-        }).position(centerX - 100, centerY + 50).size(200, 20).build());
+        }).position(centerX - 100, centerY + 70).size(200, 20).build());
 
         // 📦 ปุ่มเปิดคลังสกิน Skin Storage Cloud
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Skin Storage Cloud"), button -> {
             client.setScreen(new SkinStorageScreen(this));
-        }).position(centerX - 100, centerY + 75).size(200, 20).build());
+        }).position(centerX - 100, centerY + 95).size(200, 20).build());
 
         // ปุ่ม Close
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Close"), button -> {
             close();
-        }).position(centerX - 100, centerY + 100).size(200, 20).build());
+        }).position(centerX - 100, centerY + 120).size(200, 20).build());
     }
 
     private void openFileExplorer() {

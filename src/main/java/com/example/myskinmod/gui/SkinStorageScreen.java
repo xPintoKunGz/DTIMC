@@ -20,35 +20,47 @@ import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import org.joml.Quaternionf;
+import org.lwjgl.glfw.GLFW;
 
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class SkinStorageScreen extends Screen {
 
     private final Screen parent;
     private int selectedIndex = -1;
     private final Map<String, Identifier> loadedTextures = new HashMap<>();
+    private List<SkinEntry> validEntries = new ArrayList<>();
 
-    // Widgets แผงควบคุมรายละเอียด
-    private TextFieldWidget nameField;
+    public static final Map<String, Integer> skinKeybinds = new HashMap<>();
+
+    // Widgets
+    private TextFieldWidget nameInputField;
+    private ButtonWidget renameButton;
+    private ButtonWidget toggleTypeButton;
+    private ButtonWidget keybindButton;
+    private ButtonWidget replaceButton;
     private ButtonWidget equipButton;
     private ButtonWidget deleteButton;
-    private ButtonWidget toggleTypeButton;
     private ButtonWidget backButton;
 
-    // ระบบ Animation GUI (Slide Panel)
-    private float animProgress = 0.0f; // 0.0 (ซ่อน) ถึง 1.0 (แสดงผลเต็มที่)
+    // Animation & State
+    private float animProgress = 0.0f;
     private float targetAnim = 0.0f;
 
-    // ระบบ 3D Player Preview (อิสระ + หมุนอัตโนมัติ)
+    // Delete Animation Variables
+    private int deletingIndex = -1;
+    private float deleteAnimProgress = 1.0f;
+    private SkinEntry entryToDelete = null;
+
     private ClientPlayerEntity previewPlayer;
-    private float previewRotation = 0.0f;
-    private boolean isDraggingPreview = false;
+    private Identifier previewSkinId;
+    private float modelYaw = 0.0f;
+    private float modelPitch = 0.0f;
+    private boolean isBindingKey = false;
 
     public SkinStorageScreen(Screen parent) {
         super(Text.literal("Skin Storage Cloud"));
@@ -58,139 +70,172 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelWidth = 210;
-        int startX = (width - 450) / 2;
-        int panelX = startX + 240;
-        int topY = (height - 240) / 2;
+        // คำนวณขนาด Layout ให้สมดุล (Total Width = 420px, Panel Width = 205px Each)
+        int totalWidth = 420;
+        int panelWidth = 205;
+        int startX = (width - totalWidth) / 2;
+        int rightPanelX = startX + 215;
+        int topY = (height - 235) / 2;
 
-        // ช่องพิมพ์แก้ไขชื่อสกินโปรไฟล์
-        nameField = new TextFieldWidget(textRenderer, panelX + 15, topY + 140, 180, 20, Text.literal("Skin Name"));
-        nameField.setMaxLength(32);
-        nameField.setChangedListener(this::onNameChanged);
-        this.addSelectableChild(nameField);
+        // ตรวจสอบไฟล์ใน Storage เสมอ
+        refreshAndValidateStorage();
 
-        // ปุ่มสลับประเภทโมเดล Slim / Default
-        toggleTypeButton = ButtonWidget.builder(Text.literal("Type: Default"), button -> {
+        // 1. TextField กรอกชื่อ
+        nameInputField = new TextFieldWidget(textRenderer, rightPanelX + 10, topY + 115, 120, 20, Text.literal("Skin Name"));
+        nameInputField.setMaxLength(32);
+        this.addDrawableChild(nameInputField);
+
+        // 2. ปุ่ม Rename
+        renameButton = ButtonWidget.builder(Text.literal("Rename"), button -> applySkinRename())
+                .dimensions(rightPanelX + 135, topY + 115, 60, 20)
+                .build();
+        this.addDrawableChild(renameButton);
+
+        // 3. ปุ่ม Equip Skin
+        equipButton = ButtonWidget.builder(Text.literal("Equip Skin"), button -> equipSelectedSkin())
+                .dimensions(rightPanelX + 10, topY + 140, 185, 20)
+                .build();
+        this.addDrawableChild(equipButton);
+
+        // 4. ปุ่ม Model Type & Keybind
+        toggleTypeButton = ButtonWidget.builder(Text.literal("Model: DEF"), button -> {
             SkinEntry entry = getSelectedEntry();
             if (entry != null) {
                 String newType = entry.modelType.equals("slim") ? "default" : "slim";
                 SkinStorageManager.updateSkin(entry.id, entry.name, newType);
                 createPreviewPlayerForSelected();
                 updateUIValues();
-                showToast(Text.literal("Skin Storage"), Text.literal("Model changed to: " + newType.toUpperCase()));
             }
-        }).dimensions(panelX + 15, topY + 165, 180, 20).build();
+        }).dimensions(rightPanelX + 10, topY + 165, 90, 20).build();
         this.addDrawableChild(toggleTypeButton);
 
-        // ปุ่มสวมใส่สกิน
-        equipButton = ButtonWidget.builder(Text.literal("⚡ Equip Skin"), button -> {
-            equipSelectedSkin();
-        }).dimensions(panelX + 15, topY + 190, 180, 20).build();
-        this.addDrawableChild(equipButton);
-
-        // ปุ่มลบสกิน
-        deleteButton = ButtonWidget.builder(Text.literal("🗑 Delete Skin"), button -> {
-            SkinEntry entry = getSelectedEntry();
-            if (entry != null) {
-                String deletedName = entry.name;
-                SkinStorageManager.deleteSkin(entry.id);
-                selectedIndex = -1;
-                targetAnim = 0.0f;
-                updateUIValues();
-                showToast(Text.literal("Skin Storage"), Text.literal("Deleted skin: " + deletedName));
+        keybindButton = ButtonWidget.builder(Text.literal("Keybind"), button -> {
+            if (getSelectedEntry() != null) {
+                isBindingKey = true;
+                keybindButton.setMessage(Text.literal("> Press <"));
             }
-        }).dimensions(panelX + 15, topY + 215, 180, 20).build();
+        }).dimensions(rightPanelX + 105, topY + 165, 90, 20).build();
+        this.addDrawableChild(keybindButton);
+
+        // 5. ปุ่ม Replace & Delete
+        replaceButton = ButtonWidget.builder(Text.literal("Replace"), button -> overwriteSelectedSkinFile())
+                .dimensions(rightPanelX + 10, topY + 190, 90, 20)
+                .build();
+        this.addDrawableChild(replaceButton);
+
+        deleteButton = ButtonWidget.builder(Text.literal("Delete"), button -> startDeleteAnimation())
+                .dimensions(rightPanelX + 105, topY + 190, 90, 20)
+                .build();
         this.addDrawableChild(deleteButton);
 
-        // ปุ่มย้อนกลับ (วางด้านล่างกลางหน้าจอ)
-        backButton = ButtonWidget.builder(Text.literal("Back"), button -> {
-            MinecraftClient.getInstance().setScreen(parent);
-        }).dimensions((width - 100) / 2, height - 35, 100, 20).build();
+        // 6. ปุ่ม Back ด้านล่าง
+        backButton = ButtonWidget.builder(Text.translatable("gui.back"), button -> {
+            if (this.client != null) this.client.setScreen(parent);
+        }).dimensions((width - 150) / 2, height - 28, 150, 20).build();
         this.addDrawableChild(backButton);
 
-        loadAllTextures();
         updateUIValues();
     }
 
-    private void loadAllTextures() {
-        for (SkinEntry entry : SkinStorageManager.getEntries()) {
-            if (!loadedTextures.containsKey(entry.id)) {
-                Path path = SkinStorageManager.getSkinPath(entry);
-                if (Files.exists(path)) {
-                    try (InputStream in = Files.newInputStream(path);
-                         NativeImage img = NativeImage.read(in)) {
-                        NativeImageBackedTexture texture = new NativeImageBackedTexture(img);
-                        Identifier id = MinecraftClient.getInstance().getTextureManager()
-                                .registerDynamicTexture("storage_skin_" + entry.id, texture);
-                        loadedTextures.put(entry.id, id);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+    /**
+     * ตรวจสอบว่าไฟล์สกินใน Storage มีอยู่จริงตลอดเวลา ป้องกันสกินค้างในไฟล์
+     */
+    private void refreshAndValidateStorage() {
+        validEntries.clear();
+        var allEntries = SkinStorageManager.getEntries();
+
+        for (SkinEntry entry : allEntries) {
+            Path skinPath = SkinStorageManager.getSkinPath(entry);
+            if (Files.exists(skinPath)) {
+                validEntries.add(entry);
+                if (!loadedTextures.containsKey(entry.id)) {
+                    loadTextureForEntry(entry);
                 }
+            }
+        }
+
+        if (selectedIndex >= validEntries.size()) {
+            selectedIndex = validEntries.size() - 1;
+        }
+    }
+
+    private void loadTextureForEntry(SkinEntry entry) {
+        Path path = SkinStorageManager.getSkinPath(entry);
+        if (Files.exists(path)) {
+            try (InputStream in = Files.newInputStream(path);
+                 NativeImage img = NativeImage.read(in)) {
+                NativeImageBackedTexture texture = new NativeImageBackedTexture(img);
+                Identifier id = MinecraftClient.getInstance().getTextureManager()
+                        .registerDynamicTexture("storage_skin_" + entry.id, texture);
+                loadedTextures.put(entry.id, id);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }
 
     private SkinEntry getSelectedEntry() {
-        var entries = SkinStorageManager.getEntries();
-        if (selectedIndex >= 0 && selectedIndex < entries.size()) {
-            return entries.get(selectedIndex);
+        if (selectedIndex >= 0 && selectedIndex < validEntries.size()) {
+            return validEntries.get(selectedIndex);
         }
         return null;
     }
 
-    private void onNameChanged(String newName) {
+    /**
+     * เริ่มการทำงาน Animation สำหรับลบสกิน
+     */
+    private void startDeleteAnimation() {
+        if (deletingIndex != -1) return; // ทำการลบอยู่อยู่แล้ว
+
         SkinEntry entry = getSelectedEntry();
-        if (entry != null && !newName.trim().isEmpty() && !newName.equals(entry.name)) {
-            SkinStorageManager.updateSkin(entry.id, newName.trim(), entry.modelType);
-            showToast(Text.literal("Skin Storage"), Text.literal("Renamed profile to: " + newName.trim()));
+        if (entry != null) {
+            deletingIndex = selectedIndex;
+            entryToDelete = entry;
+            deleteAnimProgress = 1.0f;
         }
     }
 
-    private void updateUIValues() {
-        SkinEntry entry = getSelectedEntry();
-        boolean hasSelection = entry != null;
+    /**
+     * ดำเนินการลบสกินออกจาก Storage จริงเมื่อ Animation เล่นจบ
+     */
+    private void executeActualDelete() {
+        if (entryToDelete != null) {
+            String deletedName = entryToDelete.name;
+            skinKeybinds.remove(entryToDelete.id);
+            SkinStorageManager.deleteSkin(entryToDelete.id);
 
-        if (hasSelection) {
-            nameField.setText(entry.name);
-            toggleTypeButton.setMessage(Text.literal("Model: " + entry.modelType.toUpperCase()));
+            refreshAndValidateStorage();
+
+            if (validEntries.isEmpty()) {
+                selectedIndex = -1;
+                targetAnim = 0.0f;
+                previewPlayer = null;
+                previewSkinId = null;
+            } else if (selectedIndex >= validEntries.size()) {
+                selectedIndex = validEntries.size() - 1;
+                onSkinSelectionChanged();
+            } else {
+                onSkinSelectionChanged();
+            }
+
+            showToast(Text.literal("Skin Storage"), Text.literal("Deleted: " + deletedName));
         }
+
+        deletingIndex = -1;
+        entryToDelete = null;
+        deleteAnimProgress = 1.0f;
     }
 
-    // สร้าง Dummy Player สำหรับเรนเดอร์ 3D Preview (ไม่ขึ้นกับ Action ผู้เล่นจริง)
-    private void createPreviewPlayerForSelected() {
+    private void applySkinRename() {
         SkinEntry entry = getSelectedEntry();
-        MinecraftClient client = MinecraftClient.getInstance();
-
-        if (entry != null && client.world != null && client.player != null) {
-            Identifier skinId = loadedTextures.get(entry.id);
-            if (skinId != null) {
-                previewPlayer = new ClientPlayerEntity(
-                        client, client.world, client.player.networkHandler,
-                        client.player.getStatHandler(), client.player.getRecipeBook(),
-                        false, false
-                ) {
-                    @Override public ItemStack getEquippedStack(EquipmentSlot slot) { return ItemStack.EMPTY; }
-                    @Override public Iterable<ItemStack> getArmorItems() { return Collections.emptyList(); }
-                    @Override public ItemStack getMainHandStack() { return ItemStack.EMPTY; }
-                    @Override public ItemStack getOffHandStack() { return ItemStack.EMPTY; }
-                    @Override public boolean isUsingItem() { return false; }
-                    @Override public EntityPose getPose() { return EntityPose.STANDING; }
-                    @Override public Identifier getSkinTexture() { return skinId; }
-                    @Override public String getModel() { return entry.modelType; }
-                    @Override public boolean isPartVisible(PlayerModelPart part) {
-                        if (part == PlayerModelPart.CAPE) return false;
-                        return client.options.isPlayerModelPartEnabled(part);
-                    }
-                    @Override public Text getName() { return Text.empty(); }
-                };
-
-                // รีเซ็ตการหมุนและแอนิเมชันให้อยู่ในสถานะนิ่ง
-                previewPlayer.setPitch(0.0f);
-                previewPlayer.setYaw(0.0f);
-                previewPlayer.bodyYaw = 0.0f;
-                previewPlayer.headYaw = 0.0f;
-                previewPlayer.limbAnimator.setSpeed(0.0f);
+        if (entry != null) {
+            String newName = nameInputField.getText().trim();
+            if (!newName.isEmpty() && !newName.equals(entry.name)) {
+                SkinStorageManager.renameSkin(entry.id, newName);
+                showToast(Text.literal("Skin Storage"), Text.literal("Renamed to: " + newName));
+                nameInputField.setFocused(false);
+                refreshAndValidateStorage();
+                updateUIValues();
             }
         }
     }
@@ -215,169 +260,351 @@ public class SkinStorageScreen extends Screen {
                 SkinNetworkHandler.sendSkinChunks(bytes);
 
                 showToast(Text.literal("Skin Storage"), Text.literal("Equipped: " + entry.name));
+
+                // ⚡ ปิด GUI ทันทีเมื่อทำการสวมใส่สกินสำเร็จ
                 client.setScreen(null);
+
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    // แสดงการแจ้งเตือน Toast มุมขวาบน
+    private void overwriteSelectedSkinFile() {
+        SkinEntry entry = getSelectedEntry();
+        if (entry == null) return;
+
+        try {
+            loadTextureForEntry(entry);
+            createPreviewPlayerForSelected();
+            showToast(Text.literal("Skin Storage"), Text.literal("Overwrote: " + entry.name));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     private void showToast(Text title, Text description) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null && client.getToastManager() != null) {
-            SystemToast.add(client.getToastManager(), SystemToast.Type.PERIODIC_NOTIFICATION, title, description);
+            SystemToast.add(client.getToastManager(), SystemToast.Type.TUTORIAL_HINT, title, description);
+        }
+    }
+
+    private void updateUIValues() {
+        SkinEntry entry = getSelectedEntry();
+        if (entry != null) {
+            nameInputField.setText(entry.name);
+            toggleTypeButton.setMessage(Text.literal("Model: " + (entry.modelType.equals("slim") ? "SLIM" : "DEF")));
+
+            Integer boundKey = skinKeybinds.get(entry.id);
+            if (boundKey != null && boundKey != GLFW.GLFW_KEY_UNKNOWN) {
+                String keyName = GLFW.glfwGetKeyName(boundKey, 0);
+                if (keyName == null) keyName = "K" + boundKey;
+                keybindButton.setMessage(Text.literal(keyName.toUpperCase()));
+            } else {
+                keybindButton.setMessage(Text.literal("Keybind"));
+            }
+        }
+    }
+
+    private void createPreviewPlayerForSelected() {
+        SkinEntry entry = getSelectedEntry();
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        if (entry != null && client.world != null && client.player != null) {
+            Identifier skinId = loadedTextures.get(entry.id);
+            if (skinId != null) {
+                this.previewSkinId = skinId;
+                previewPlayer = new ClientPlayerEntity(
+                        client, client.world, client.player.networkHandler,
+                        client.player.getStatHandler(), client.player.getRecipeBook(),
+                        false, false
+                ) {
+                    @Override public ItemStack getEquippedStack(EquipmentSlot slot) { return ItemStack.EMPTY; }
+                    @Override public Iterable<ItemStack> getArmorItems() { return Collections.emptyList(); }
+                    @Override public ItemStack getMainHandStack() { return ItemStack.EMPTY; }
+                    @Override public ItemStack getOffHandStack() { return ItemStack.EMPTY; }
+                    @Override public boolean isUsingItem() { return false; }
+                    @Override public EntityPose getPose() { return EntityPose.STANDING; }
+                    @Override public Identifier getSkinTexture() { return skinId; }
+                    @Override public String getModel() { return entry.modelType; }
+                    @Override public boolean isPartVisible(PlayerModelPart part) {
+                        if (part == PlayerModelPart.CAPE) return false;
+                        return client.options.isPlayerModelPartEnabled(part);
+                    }
+                    @Override public Text getName() { return Text.empty(); }
+                };
+            } else {
+                this.previewSkinId = null;
+                this.previewPlayer = null;
+            }
+        } else {
+            this.previewSkinId = null;
+            this.previewPlayer = null;
+        }
+    }
+
+    private void render3DPreview(DrawContext context, int x, int y) {
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        if (previewPlayer != null && previewSkinId != null) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0, 0, 500.0f);
+
+            Quaternionf bodyRotation = new Quaternionf()
+                    .rotateX((float) Math.toRadians(180f + modelPitch))
+                    .rotateY((float) Math.toRadians(modelYaw));
+
+            if (client.world != null) {
+                previewPlayer.age = (int) (client.world.getTime() % 10000L);
+            } else {
+                previewPlayer.age++;
+            }
+
+            previewPlayer.headYaw = (float) Math.sin(System.currentTimeMillis() / 1000.0) * 5f;
+            previewPlayer.bodyYaw = 0f;
+            previewPlayer.setYaw(0f);
+            previewPlayer.setPitch(0f);
+
+            InventoryScreen.drawEntity(
+                    context,
+                    x, y,
+                    38,
+                    bodyRotation,
+                    null,
+                    previewPlayer
+            );
+
+            context.getMatrices().pop();
+        } else {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Select a skin to preview"), x, y - 10, 0xAAAAAA);
         }
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int totalWidth = 450;
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        int totalWidth = 420;
         int startX = (width - totalWidth) / 2;
-        int leftX = startX;
-        int topY = (height - 240) / 2;
-        var entries = SkinStorageManager.getEntries();
+        int topY = (height - 235) / 2;
+        int currentPanelX = startX + 215;
 
-        // ตรวจจับการคลิกเลือกรายการสกินในคลังฝั่งซ้าย
-        for (int i = 0; i < entries.size(); i++) {
-            int itemY = topY + (i * 36);
-            if (mouseX >= leftX && mouseX <= leftX + 220 && mouseY >= itemY && mouseY < itemY + 32) {
-                selectedIndex = i;
-                targetAnim = 1.0f;
-                createPreviewPlayerForSelected();
-                updateUIValues();
+        if (button == 0 && mouseX >= currentPanelX && mouseX <= currentPanelX + 205 && mouseY >= topY && mouseY <= topY + 105) {
+            modelYaw += (float) deltaX * 1.5f;
+            modelPitch = Math.max(-80.0f, Math.min(80.0f, modelPitch + (float) deltaY * 1.5f));
+            return true;
+        }
+
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (isBindingKey) {
+            SkinEntry entry = getSelectedEntry();
+            if (entry != null) {
+                if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                    skinKeybinds.remove(entry.id);
+                    showToast(Text.literal("Keybind Cleared"), Text.literal("Removed keybind for " + entry.name));
+                } else {
+                    skinKeybinds.put(entry.id, keyCode);
+                    String keyName = GLFW.glfwGetKeyName(keyCode, scanCode);
+                    if (keyName == null) keyName = "Key " + keyCode;
+                    showToast(Text.literal("Keybind Saved"), Text.literal("Bound [" + keyName.toUpperCase() + "] to " + entry.name));
+                }
+            }
+            isBindingKey = false;
+            updateUIValues();
+            return true;
+        }
+
+        if (nameInputField != null && nameInputField.isFocused()) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                applySkinRename();
+                return true;
+            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+
+        // เช็ค Keybind สำหรับสวมใส่สกิน (พร้อมปิด GUI ทันที)
+        for (Map.Entry<String, Integer> kEntry : skinKeybinds.entrySet()) {
+            if (kEntry.getValue() == keyCode) {
+                for (int i = 0; i < validEntries.size(); i++) {
+                    if (validEntries.get(i).id.equals(kEntry.getKey())) {
+                        selectedIndex = i;
+                        onSkinSelectionChanged();
+                        equipSelectedSkin();
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if (!validEntries.isEmpty()) {
+            if (keyCode == GLFW.GLFW_KEY_UP) {
+                selectedIndex = (selectedIndex <= 0) ? validEntries.size() - 1 : selectedIndex - 1;
+                onSkinSelectionChanged();
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_DOWN) {
+                selectedIndex = (selectedIndex >= validEntries.size() - 1) ? 0 : selectedIndex + 1;
+                onSkinSelectionChanged();
+                return true;
+            } else if (keyCode >= GLFW.GLFW_KEY_1 && keyCode <= GLFW.GLFW_KEY_9) {
+                int index = keyCode - GLFW.GLFW_KEY_1;
+                if (index < validEntries.size()) {
+                    selectedIndex = index;
+                    onSkinSelectionChanged();
+                }
+                return true;
+            } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
+                if (selectedIndex >= 0 && selectedIndex < validEntries.size()) {
+                    equipSelectedSkin();
+                }
                 return true;
             }
         }
 
-        // ตรวจจับการคลิกบริเวณ 3D Preview เพื่อเริ่มลากหมุนตัวละคร
-        int panelX = startX + 240;
-        if (selectedIndex >= 0 && mouseX >= panelX && mouseX <= panelX + 210 && mouseY >= topY && mouseY <= topY + 130) {
-            isDraggingPreview = true;
-            return true;
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void onSkinSelectionChanged() {
+        targetAnim = 1.0f;
+        modelYaw = 0.0f;
+        modelPitch = 0.0f;
+        createPreviewPlayerForSelected();
+        updateUIValues();
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int totalWidth = 420;
+        int startX = (width - totalWidth) / 2;
+        int leftX = startX;
+        int topY = (height - 235) / 2;
+
+        for (int i = 0; i < validEntries.size(); i++) {
+            int itemY = topY + (i * 36);
+            if (mouseX >= leftX && mouseX <= leftX + 205 && mouseY >= itemY && mouseY < itemY + 32) {
+                selectedIndex = i;
+                onSkinSelectionChanged();
+                return true;
+            }
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        isDraggingPreview = false;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (isDraggingPreview && selectedIndex >= 0) {
-            previewRotation -= deltaX * 2.5f;
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-    }
-
-    @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context);
 
-        // คำนวณ Smooth Animation
-        animProgress += (targetAnim - animProgress) * 0.2f;
+        // อัปเดตและตรวจสอบความถูกต้องของสกินตลอดเวลา
+        refreshAndValidateStorage();
 
-        // คำนวณจุดกึ่งกลาง Layout สัมพัทธ์กับ Resolution จอภาพ
-        int totalWidth = 450;
-        int startX = (width - totalWidth) / 2;
-        int topY = (height - 240) / 2;
-
-        int panelWidth = 210;
-        int basePanelX = startX + 240;
-        int currentPanelX = basePanelX + (int) ((1.0f - animProgress) * 50);
-
-        boolean showPanel = animProgress > 0.05f;
-        nameField.setVisible(showPanel);
-        nameField.setX(currentPanelX + 15);
-        toggleTypeButton.visible = showPanel;
-        toggleTypeButton.setX(currentPanelX + 15);
-        equipButton.visible = showPanel;
-        equipButton.setX(currentPanelX + 15);
-        deleteButton.visible = showPanel;
-        deleteButton.setX(currentPanelX + 15);
-
-        // อัปเดตการหมุนตัวละคร 3D Preview อัตโนมัติเมื่อไม่ได้กดลาก
-        if (!isDraggingPreview && previewPlayer != null) {
-            previewRotation += delta * 1.5f;
-        }
-
-        super.render(context, mouseX, mouseY, delta);
-
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Skin Storage Cloud"), width / 2, Math.max(10, topY - 25), 0xFFFFFF);
-
-        int leftX = startX;
-        var entries = SkinStorageManager.getEntries();
-
-        // ===================== ฝั่งซ้าย: รายชื่อสกิน (พร้อมลำดับเลขที่) =====================
-        context.fill(leftX - 2, topY - 2, leftX + 222, topY + 230, 0x66000000);
-
-        if (entries.isEmpty()) {
-            context.drawText(textRenderer, "No saved skins yet.", leftX + 10, topY + 10, 0xAAAAAA, false);
-        } else {
-            for (int i = 0; i < entries.size(); i++) {
-                SkinEntry entry = entries.get(i);
-                int itemY = topY + (i * 36);
-
-                int bgColor = (i == selectedIndex) ? 0xAA335588 : 0x44000000;
-                context.fill(leftX, itemY, leftX + 220, itemY + 32, bgColor);
-
-                // 1. แสดงลำดับเลขที่สกิน (#1, #2, #3...)
-                String orderTag = "#" + (i + 1);
-                context.drawText(textRenderer, orderTag, leftX + 6, itemY + 12, 0xFFFFAA00, true);
-
-                // 2. แสดงรูปไอคอนหัวสกิน
-                Identifier textureId = loadedTextures.get(entry.id);
-                if (textureId != null) {
-                    context.drawTexture(textureId, leftX + 28, itemY + 4, 24, 24, 8.0f, 8.0f, 8, 8, 64, 64);
-                    context.drawTexture(textureId, leftX + 28, itemY + 4, 24, 24, 40.0f, 8.0f, 8, 8, 64, 64);
-                }
-
-                // 3. ชื่อและประเภทโมเดล
-                String displayName = entry.name.length() > 14 ? entry.name.substring(0, 12) + ".." : entry.name;
-                context.drawText(textRenderer, displayName, leftX + 58, itemY + 5, 0xFFFFFF, false);
-                context.drawText(textRenderer, entry.createdDate + " (" + entry.modelType + ")", leftX + 58, itemY + 18, 0xAAAAAA, false);
+        // คำนวณ Delete Animation
+        if (deletingIndex != -1) {
+            deleteAnimProgress -= delta * 0.15f;
+            if (deleteAnimProgress <= 0.0f) {
+                executeActualDelete();
             }
         }
 
-        // ===================== ฝั่งขวา: แผงรายละเอียด + 3D Preview =====================
+        animProgress += (targetAnim - animProgress) * 0.2f;
+
+        int totalWidth = 420;
+        int panelWidth = 205;
+        int startX = (width - totalWidth) / 2;
+        int topY = (height - 235) / 2;
+
+        int basePanelX = startX + 215;
+        int currentPanelX = basePanelX + (int) ((1.0f - animProgress) * 40);
+
+        boolean showPanel = animProgress > 0.05f && !validEntries.isEmpty();
+
+        // อัปเดตตำแหน่ง Control Widgets
+        nameInputField.setVisible(showPanel);
+        nameInputField.setX(currentPanelX + 10);
+
+        renameButton.visible = showPanel;
+        renameButton.setX(currentPanelX + 135);
+
+        equipButton.visible = showPanel;
+        equipButton.setX(currentPanelX + 10);
+
+        toggleTypeButton.visible = showPanel;
+        toggleTypeButton.setX(currentPanelX + 10);
+
+        keybindButton.visible = showPanel;
+        keybindButton.setX(currentPanelX + 105);
+
+        replaceButton.visible = showPanel;
+        replaceButton.setX(currentPanelX + 10);
+
+        deleteButton.visible = showPanel;
+        deleteButton.setX(currentPanelX + 105);
+
+        // วาดส่วนประกอบ GUI มาตรฐาน
+        super.render(context, mouseX, mouseY, delta);
+
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Skin Storage Cloud"), width / 2, Math.max(8, topY - 22), 0xFFFFFF);
+
+        int leftX = startX;
+
+        // ===================== ฝั่งซ้าย: รายการสกิน (List Panel) =====================
+        context.fill(leftX - 2, topY - 2, leftX + panelWidth, topY + 235, 0x66000000);
+
+        if (validEntries.isEmpty()) {
+            context.drawText(textRenderer, "No saved skins yet.", leftX + 10, topY + 10, 0xAAAAAA, false);
+        } else {
+            for (int i = 0; i < validEntries.size(); i++) {
+                SkinEntry entry = validEntries.get(i);
+                int baseItemY = topY + (i * 36);
+
+                int itemX = leftX;
+                int itemY = baseItemY;
+
+                // เล่น Animation สไลด์รายการเลื่อนออกเมื่อลบ
+                if (i == deletingIndex) {
+                    itemX = leftX - (int) ((1.0f - deleteAnimProgress) * 210);
+                } else if (deletingIndex != -1 && i > deletingIndex) {
+                    itemY = baseItemY - (int) ((1.0f - deleteAnimProgress) * 36);
+                }
+
+                int bgColor = (i == selectedIndex) ? 0xAA335588 : 0x44000000;
+                context.fill(itemX, itemY, itemX + panelWidth - 5, itemY + 32, bgColor);
+
+                String orderTag = "#" + (i + 1);
+                context.drawText(textRenderer, orderTag, itemX + 6, itemY + 12, 0xFFFFAA00, true);
+
+                Identifier textureId = loadedTextures.get(entry.id);
+                if (textureId != null) {
+                    context.drawTexture(textureId, itemX + 28, itemY + 4, 24, 24, 8.0f, 8.0f, 8, 8, 64, 64);
+                    context.drawTexture(textureId, itemX + 28, itemY + 4, 24, 24, 40.0f, 8.0f, 8, 8, 64, 64);
+                }
+
+                String displayName = entry.name.length() > 11 ? entry.name.substring(0, 9) + ".." : entry.name;
+                Integer k = skinKeybinds.get(entry.id);
+                if (k != null && k != GLFW.GLFW_KEY_UNKNOWN) {
+                    String kName = GLFW.glfwGetKeyName(k, 0);
+                    displayName += " [" + (kName != null ? kName.toUpperCase() : k) + "]";
+                }
+
+                context.drawText(textRenderer, displayName, itemX + 58, itemY + 5, 0xFFFFFF, false);
+                context.drawText(textRenderer, entry.createdDate + " (" + entry.modelType + ")", itemX + 58, itemY + 18, 0xAAAAAA, false);
+            }
+        }
+
+        // ===================== ฝั่งขวา: รายละเอียดสกิน & 3D Preview =====================
         if (showPanel) {
-            context.fill(currentPanelX, topY - 2, currentPanelX + panelWidth, topY + 240, 0xBB111111);
-            context.fill(currentPanelX, topY - 2, currentPanelX + 2, topY + 240, 0xFF5588FF);
+            context.fill(currentPanelX, topY - 2, currentPanelX + panelWidth, topY + 235, 0xBB111111);
+            context.fill(currentPanelX, topY - 2, currentPanelX + 2, topY + 235, 0xFF5588FF);
 
             SkinEntry entry = getSelectedEntry();
             if (entry != null) {
-                context.drawCenteredTextWithShadow(textRenderer, "Skin Details #" + (selectedIndex + 1), currentPanelX + (panelWidth / 2), topY + 8, 0xFFFFAA00);
+                context.drawCenteredTextWithShadow(textRenderer, "Skin Details #" + (selectedIndex + 1), currentPanelX + (panelWidth / 2), topY + 6, 0xFFFFAA00);
 
-                // 🧍 3D Player Preview อิสระ
-                if (previewPlayer != null) {
-                    int previewX = currentPanelX + (panelWidth / 2);
-                    int previewY = topY + 125;
-                    int scale = 45;
-
-                    // ปรับแต่งทิศทางหัวและลำตัวให้หมุนตามมุมมอง previewRotation
-                    previewPlayer.setPitch(0.0f);
-                    previewPlayer.setYaw(previewRotation);
-                    previewPlayer.bodyYaw = previewRotation;
-                    previewPlayer.headYaw = previewRotation;
-                    previewPlayer.prevBodyYaw = previewRotation;
-                    previewPlayer.prevYaw = previewRotation;
-                    previewPlayer.prevHeadYaw = previewRotation;
-
-                    float lookX = previewX + (float) Math.sin(Math.toRadians(previewRotation)) * 80.0f;
-                    float lookY = previewY - 25.0f;
-
-                    InventoryScreen.drawEntity(
-                            context,
-                            previewX, previewY, scale,
-                            lookX, lookY,
-                            previewPlayer
-                    );
-                }
+                int previewX = currentPanelX + (panelWidth / 2);
+                int previewY = topY + 98;
+                render3DPreview(context, previewX, previewY);
             }
         }
     }

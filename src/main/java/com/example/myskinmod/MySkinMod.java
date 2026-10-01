@@ -50,7 +50,7 @@ public class MySkinMod implements ClientModInitializer {
 
                             // 4. วาดข้อความ (0x00FFFF = สีฟ้า, 0xFFFFFF = สีขาว)
                             context.drawText(manager.getClient().textRenderer,
-                                    Text.literal("NUI: Activated!"), 10, 7, 0x00FFFF, false);
+                                    Text.literal("Devathip Skin: Activated!"), 10, 7, 0x00FFFF, false);
 
                             context.drawText(manager.getClient().textRenderer,
                                     Text.literal("Press R to open skin menu!"), 10, 18, 0xAAAAAA, false); // สีเทาอ่อน
@@ -65,10 +65,10 @@ public class MySkinMod implements ClientModInitializer {
 
         // 2. ลงทะเบียนปุ่มกด
         openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "Open Unified Interface Menu",
+                "Open Devathip Skin Menu",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_R,
-                "NUI Mod (Unified Interface)"
+                "Devathip Skin"
         ));
 
         // 4. ตรวจจับการกดปุ่ม

@@ -76,7 +76,17 @@ public class SkinStorageManager {
 
     public static SkinEntry addSkin(String name, String modelType, NativeImage image) {
         String id = UUID.randomUUID().toString();
-        String fileName = "skin_" + System.currentTimeMillis() + ".png";
+
+        // กำหนดชื่อเริ่มต้นถ้าไม่ได้ระบุ
+        if (name == null || name.trim().isEmpty()) {
+            name = generateNextDefaultName();
+        } else {
+            name = name.trim();
+        }
+
+        // ตั้งชื่อไฟล์ตามชื่อสกินที่ปลอดภัย
+        String safeName = name.replaceAll("[^a-zA-Z0-9._-]", "_");
+        String fileName = safeName + "_" + System.currentTimeMillis() + ".png";
         Path imagePath = STORAGE_DIR.resolve(fileName);
 
         try {
@@ -90,6 +100,52 @@ public class SkinStorageManager {
             e.printStackTrace();
             return null;
         }
+    }
+
+    public static String generateNextDefaultName() {
+        int number = 1;
+        while (true) {
+            String candidate = "My Skin " + number;
+            boolean exists = false;
+            for (SkinEntry entry : entries) {
+                if (entry.name.equalsIgnoreCase(candidate)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                return candidate;
+            }
+            number++;
+        }
+    }
+
+    // [เพิ่มใหม่] เปลี่ยนชื่อสกิน + เปลี่ยนชื่อไฟล์ .png จริงบนดิสก์
+    public static void renameSkin(String id, String newName) {
+        if (newName == null || newName.trim().isEmpty()) return;
+        String cleanName = newName.trim();
+
+        for (SkinEntry entry : entries) {
+            if (entry.id.equals(id)) {
+                entry.name = cleanName;
+
+                // เปลี่ยนชื่อไฟล์ .png จริงบนดิสก์
+                try {
+                    String safeFileName = cleanName.replaceAll("[^a-zA-Z0-9._-]", "_") + "_" + System.currentTimeMillis() + ".png";
+                    Path oldPath = STORAGE_DIR.resolve(entry.fileName);
+                    Path newPath = STORAGE_DIR.resolve(safeFileName);
+
+                    if (Files.exists(oldPath)) {
+                        Files.move(oldPath, newPath, StandardCopyOption.REPLACE_EXISTING);
+                        entry.fileName = safeFileName;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                break;
+            }
+        }
+        saveStorage();
     }
 
     public static void deleteSkin(String id) {
@@ -114,8 +170,12 @@ public class SkinStorageManager {
     public static void updateSkin(String id, String newName, String newModelType) {
         for (SkinEntry entry : entries) {
             if (entry.id.equals(id)) {
-                entry.name = newName;
-                entry.modelType = newModelType;
+                if (newName != null && !newName.trim().isEmpty()) {
+                    renameSkin(id, newName);
+                }
+                if (newModelType != null && !newModelType.trim().isEmpty()) {
+                    entry.modelType = newModelType;
+                }
                 break;
             }
         }
