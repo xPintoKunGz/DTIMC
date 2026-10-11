@@ -189,7 +189,8 @@ public class SkinChangerScreen extends Screen {
 
                     this.droppedFilePath = "Dropped file: " + path;
 
-                    if (path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg")) {
+                    String lowerPath = path.toLowerCase(java.util.Locale.ROOT);
+                    if (lowerPath.endsWith(".png") || lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) {
                         try {
                             handleDroppedFile(path);
                         } catch (IOException e) {
@@ -338,8 +339,8 @@ public class SkinChangerScreen extends Screen {
     }
 
     private static class SkinErrorToast implements net.minecraft.client.toast.Toast {
-        // 🎯 1. กำหนดตำแหน่งไฟล์รูปภาพไอคอน
-        private static final Identifier ERROR_ICON = new Identifier("myskinmod", "textures/gui/decline.png");
+        // 1. ระบุตำแหน่งไฟล์ PNG ที่ต้องการใช้
+        private static final Identifier DECLINE_ICON = new Identifier("myskinmod", "textures/gui/decline.png");
 
         private final String title;
         private final String message;
@@ -356,28 +357,22 @@ public class SkinChangerScreen extends Screen {
             int borderColor = 0xFFFF5555;
             int progressColor = 0xFFAA2222;
 
-            // วาดพื้นหลังและขอบ Toast
+            // พื้นหลัง Toast
             context.fill(0, 0, 160, 32, backgroundColor);
             context.fill(0, 0, 160, 1, borderColor);
             context.fill(0, 31, 160, 32, borderColor);
             context.fill(0, 0, 1, 32, borderColor);
             context.fill(159, 0, 160, 32, borderColor);
 
-            // 🎯 2. วาดรูปภาพไอคอน (ขนาด 16x16 พิกเซล ที่ตำแหน่ง X=6, Y=8)
-            // drawTexture(Identifier, x, y, u, v, width, height, textureWidth, textureHeight)
-            context.drawTexture(ERROR_ICON, 6, 8, 0, 0, 16, 16, 16, 16);
-
-            // คำนวณหลอดเวลานับถอยหลัง Progress Bar
             float progress = 1.0f - ((float) startTime / (float) TOTAL_TIME);
             int progressBarWidth = (int) (158 * progress);
             if (progressBarWidth > 0) {
                 context.fill(1, 29, 1 + progressBarWidth, 31, progressColor);
             }
 
-            // 🎯 3. แสดงข้อความ Title (ขยับ X จาก 8 เป็น 26 เพื่อหลบไอคอน)
+            // แสดงข้อความ
             context.drawText(manager.getClient().textRenderer, this.title, 26, 6, borderColor, false);
 
-            // แสดงข้อความ Message ด้านล่างไอคอน/ข้อความ
             String displayMsg = this.message.length() > 22 ? this.message.substring(0, 19) + "..." : this.message;
             context.drawText(manager.getClient().textRenderer, displayMsg, 26, 17, 0xFFE0E0E0, false);
 
