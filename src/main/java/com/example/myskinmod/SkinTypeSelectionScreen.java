@@ -16,9 +16,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.joml.Quaternionf;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,6 +41,7 @@ public class SkinTypeSelectionScreen extends Screen {
     private float modelYaw = 0f;
     private float modelPitch = 0f;
     private boolean rotating = false;
+    private boolean pathHover = false;
 
     private StyledButton classicButton, slimButton;
     private ModalOverlay overlay;
@@ -159,60 +157,47 @@ public class SkinTypeSelectionScreen extends Screen {
     }
 
     // ------------------------------------------------------------------ preview loading
+    /**
+     * The image is already loaded and validated (ImageLoader). Work on a private copy: fix its transparency
+     * off the main thread, then build the preview texture. Nothing is downloaded or read from disk a second time.
+     */
     private void loadAndPreviewSkin(String url) {
         MinecraftClient client = MinecraftClient.getInstance();
+        final NativeImage source = this.skinImage;
+        if (source == null) {
+            ModToast.error(t("type.err.load.title"), t("type.err.empty"));
+            return;
+        }
 
-        new Thread(() -> {
+        Thread th = new Thread(() -> {
             try {
-                NativeImage loadedImage;
-
-                if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                    conn.setRequestProperty("User-Agent", "Minecraft-Skin-Mod");
-                    try (InputStream in = conn.getInputStream()) {
-                        loadedImage = NativeImage.read(in);
-                    }
-                } else {
-                    if (url == null || url.isEmpty()) {
-                        ModToast.error(t("type.err.load.title"), t("type.err.empty"));
-                        return;
-                    }
-                    try (InputStream in = Files.newInputStream(Paths.get(url))) {
-                        loadedImage = NativeImage.read(in);
-                    }
-                }
-
-                int w = loadedImage.getWidth();
-                int h = loadedImage.getHeight();
-                if (w < 64 || h < 64 || w > 8192 || h > 8192) {
-                    loadedImage.close();
-                    ModToast.error(t("type.err.size.title"), t("type.err.size.msg"));
-                    return;
-                }
-
-                fixSkinTransparency(loadedImage);
+                NativeImage copy = new NativeImage(NativeImage.Format.RGBA, source.getWidth(), source.getHeight(), false);
+                copy.copyFrom(source);
+                fixSkinTransparency(copy);
 
                 client.execute(() -> {
                     try {
-                        if (this.skinImage != null && this.skinImage != loadedImage) this.skinImage.close();
-                        this.skinImage = loadedImage;
-
-                        NativeImageBackedTexture texture = new NativeImageBackedTexture(loadedImage);
+                        if (this.skinImage == null) { // screen was closed while preparing
+                            copy.close();
+                            return;
+                        }
+                        this.skinImage = copy;
+                        NativeImageBackedTexture texture = new NativeImageBackedTexture(copy);
                         previewSkinId = client.getTextureManager().registerDynamicTexture("skin_preview", texture);
-
                         previewPlayer = PreviewPlayerFactory.create(client, () -> previewSkinId, () -> currentModelType);
                         updateModelButtons();
                         ModToast.show(ModToast.Type.INFO, t("type.toast.loaded.title"), t("type.toast.loaded.msg"),
-                                previewSkinId, loadedImage.getWidth(), loadedImage.getHeight());
-                    } catch (Exception e) {
+                                previewSkinId, copy.getWidth(), copy.getHeight());
+                    } catch (Throwable e) {
                         ModToast.error(t("type.err.preview.title"), t("type.err.preview.msg"));
                     }
                 });
-
-            } catch (Exception e) {
-                ModToast.error(t("type.err.download.title"), t("type.err.download.msg"));
+            } catch (Throwable e) {
+                ImageLoader.toast(e);
             }
-        }).start();
+        }, "skin-preview-prep");
+        th.setDaemon(true);
+        th.start();
     }
 
     // ------------------------------------------------------------------ apply
@@ -288,7 +273,12 @@ public class SkinTypeSelectionScreen extends Screen {
                 skinImage.getWidth(), skinImage.getHeight());
 
         MinecraftClient client = MinecraftClient.getInstance();
-        Screen target = (parent instanceof SkinChangerScreen sc) ? sc.getReturnScreen() : null;
+        Screen target = null;
+        if (parent instanceof SkinChangerScreen sc) {
+            sc.clearImportState();
+            target = sc.getReturnScreen();                       // came from Skin Storage Cloud
+            if (target == null) target = new SkinStorageScreen(sc); // came from the main menu
+        }
         if (target == null) target = new SkinStorageScreen(null);
         client.setScreen(target);
     }
@@ -309,7 +299,7 @@ public class SkinTypeSelectionScreen extends Screen {
         c.drawText(tr, t("type.preview"), leftX + 10, topY + 9, UiKit.GOLD, false);
         UiKit.inset(c, leftX + 6, topY + 28, leftW - 12, panelH - 36, 0x22FFFFFF);
 
-        if (!modal) render3DPreview(c, leftX + leftW / 2, topY + panelH - 30);
+        if (!modal) render3DPreview(c, leftX + leftW / 2, topY + 28 + (int) (0.82 * (panelH - 36)));
         if (previewPlayer == null) {
             c.drawCenteredTextWithShadow(tr, t("type.loading"), leftX + leftW / 2, topY + panelH / 2, 0xFFAAAAAA);
         } else {
@@ -349,16 +339,40 @@ public class SkinTypeSelectionScreen extends Screen {
         else if (isUrl) srcLabel = t("type.source.url");
         else srcLabel = Files.exists(Paths.get(skinUrl)) ? t("type.source.file") : t("type.source.invalid");
         c.drawText(tr, srcLabel, bx, sy, 0xFF8A8FA3, false);
+        pathHover = false;
         if (skinUrl != null && !skinUrl.isEmpty()) {
             int w = rightW - 20;
-            UiKit.inset(c, bx, sy + 11, w, 14, 0x33FFFFFF);
-            Privacy.draw(c, tr, skinUrl, bx + 4, sy + 14, 0xFF55FF55, w - 8);
+            int boxY = sy + 11;
+            int innerW = w - 8;
+            int textW = tr.getWidth(skinUrl);
+            UiKit.inset(c, bx, boxY, w, 14, 0x33FFFFFF);
+            if (Privacy.masked()) {
+                Privacy.mosaic(c, bx + 4, boxY + 2, Math.min(innerW, Math.max(12, textW)), 10);
+            } else if (textW <= innerW) {
+                c.drawText(tr, skinUrl, bx + 4, boxY + 3, 0xFF55FF55, false);
+            } else {
+                boolean over = UiKit.in(mx, my, bx, boxY, w, 14);
+                pathHover = over;
+                c.enableScissor(bx + 3, boxY + 1, bx + w - 3, boxY + 13);
+                if (over && Screen.hasShiftDown()) {
+                    // Shift + move the mouse along the box: the path slides so every part can be read
+                    double frac = Math.max(0, Math.min(1, (mx - (bx + 4)) / (double) innerW));
+                    c.drawText(tr, skinUrl, bx + 4 - (int) ((textW - innerW) * frac), boxY + 3, 0xFFFFE08A, false);
+                } else {
+                    c.drawText(tr, UiKit.fitTail(tr, skinUrl, innerW), bx + 4, boxY + 3, 0xFF55FF55, false);
+                }
+                c.disableScissor();
+            }
         }
 
         // model selector caption
         c.drawText(tr, t("type.model_type"), bx, classicButton.getY() - 11, 0xFF8A8FA3, false);
 
         super.render(c, mx, my, delta);
+
+        if (pathHover && !modal && !Screen.hasShiftDown()) {
+            c.drawTooltip(tr, Text.literal(t("type.path_hint")), mouseX, mouseY);
+        }
 
         Privacy.badge(c, tr, height);
         if (modal) overlay.render(c, tr, width, height, mouseX, mouseY);
@@ -374,14 +388,19 @@ public class SkinTypeSelectionScreen extends Screen {
                 .rotateY((float) Math.toRadians(modelYaw));
 
         previewPlayer.age = client.world != null ? (int) (client.world.getTime() % 10000L) : previewPlayer.age + 1;
-        previewPlayer.headYaw = (float) Math.sin(System.currentTimeMillis() / 1000.0) * 5f;
+        previewPlayer.headYaw = 0f;
         previewPlayer.bodyYaw = 0f;
         previewPlayer.setYaw(0f);
         previewPlayer.setPitch(0f);
         previewPlayer.limbAnimator.setSpeed(0.0f);
 
-        int size = Math.max(30, (int) ((panelH - 64) / 1.9));
+        // ~60% of the preview box height, so it still fits when rotated
+        int size = Math.max(24, (int) (0.60 * (panelH - 36) / 1.8));
+
+        // Clip to the preview box: the model never draws over other panels or buttons, at any angle.
+        c.enableScissor(leftX + 7, topY + 29, leftX + leftW - 7, topY + panelH - 9);
         InventoryScreen.drawEntity(c, x, y, size, rotation, null, previewPlayer);
+        c.disableScissor();
     }
 
     // ------------------------------------------------------------------ input
@@ -405,7 +424,7 @@ public class SkinTypeSelectionScreen extends Screen {
         if (overlayActive()) return true;
         if (button == 0 && rotating) {
             modelYaw += (float) deltaX * 1.5f;
-            modelPitch = Math.max(-45f, Math.min(45f, modelPitch + (float) deltaY * 1.5f));
+            modelPitch = Math.max(-20f, Math.min(20f, modelPitch + (float) deltaY * 1.5f));
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -431,6 +450,7 @@ public class SkinTypeSelectionScreen extends Screen {
             skinImage = null;
         }
         if (skinId != null) MinecraftClient.getInstance().getTextureManager().destroyTexture(skinId);
+        if (parent instanceof SkinChangerScreen sc) sc.clearImportState();
         MinecraftClient.getInstance().setScreen(parent);
     }
 }

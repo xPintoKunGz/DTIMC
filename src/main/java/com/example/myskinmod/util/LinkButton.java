@@ -8,7 +8,7 @@ import net.minecraft.text.Text;
 
 /** Icon + text link (no Minecraft button frame). Used for the back arrow and the Options link. */
 public class LinkButton extends ClickableWidget {
-    public enum Icon { BACK, OPTIONS }
+    public enum Icon { BACK, OPTIONS, CLOSE }
 
     private final Icon icon;
     private final Runnable action;
@@ -38,6 +38,11 @@ public class LinkButton extends ClickableWidget {
         if (icon == Icon.BACK) {
             for (int i = 0; i < 5; i++) c.fill(x + i, cy - i, x + i + 1, cy + i + 1, color);
             c.fill(x + 4, cy - 1, x + ICON_W, cy + 2, color);
+        } else if (icon == Icon.CLOSE) {
+            for (int i = 0; i < 9; i++) {
+                c.fill(x + 1 + i, cy - 4 + i, x + 2 + i, cy - 3 + i, color);
+                c.fill(x + 1 + i, cy + 4 - i, x + 2 + i, cy + 5 - i, color);
+            }
         } else {
             int[] knob = {3, 8, 5};
             for (int i = 0; i < 3; i++) {

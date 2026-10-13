@@ -9,7 +9,6 @@ import net.minecraft.client.toast.ToastManager;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
 import java.util.List;
@@ -37,18 +36,18 @@ public final class ModToast implements Toast {
         this.skin = skin;
         this.skinW = skinW;
         this.skinH = skinH;
-        this.duration = type == Type.ERROR ? 5500L : 4000L;
+        this.duration = type == Type.ERROR ? 4500L : 3500L;
 
-        int textX = 36;
-        int maxTextW = 180;
+        int textX = 28;
+        int maxTextW = 150;
         this.title = UiKit.fit(tr, title, maxTextW);
         List<OrderedText> wrapped = tr.wrapLines(Text.literal(message), maxTextW);
         this.lines = wrapped.size() > 2 ? wrapped.subList(0, 2) : wrapped;
 
         int widest = tr.getWidth(this.title);
         for (OrderedText l : lines) widest = Math.max(widest, tr.getWidth(l));
-        this.width = Math.max(150, Math.min(textX + maxTextW + 12, textX + widest + 12));
-        this.height = lines.size() > 1 ? 44 : 34;
+        this.width = Math.max(120, Math.min(textX + maxTextW + 8, textX + widest + 8));
+        this.height = lines.size() > 1 ? 36 : 28;
     }
 
     // Both are read by the toast manager (declared without @Override so it compiles on every 1.20.x mapping)
@@ -73,44 +72,39 @@ public final class ModToast implements Toast {
         TextRenderer tr = manager.getClient().textRenderer;
         int accent = accent();
 
-        c.fill(0, 0, width, height, 0xF0101014);
-        c.fill(0, 0, width, 1, 0x33FFFFFF);
-        c.fill(0, height - 1, width, height, 0x33FFFFFF);
-        c.fill(0, 0, 1, height, 0x33FFFFFF);
-        c.fill(width - 1, 0, width, height, 0x33FFFFFF);
-        c.fill(0, 0, 3, height, accent);
+        c.fill(0, 0, width, height, 0xE6101014);
+        c.fill(0, 0, width, 1, 0x22FFFFFF);
+        c.fill(0, height - 1, width, height, 0x22FFFFFF);
+        c.fill(width - 1, 0, width, height, 0x22FFFFFF);
+        c.fill(0, 0, 2, height, accent);
 
-        int ix = 10, iy = (height - 3 - 20) / 2;
+        int ix = 8, iy = 6, is = 16;
         if (skin != null) {
-            c.fill(ix - 1, iy - 1, ix + 21, iy + 21, accent);
+            c.fill(ix - 1, iy - 1, ix + is + 1, iy + is + 1, (accent & 0x00FFFFFF) | 0x99000000);
             float k = skinW / 64.0f;
             int region = Math.max(1, Math.round(8 * k));
-            c.drawTexture(skin, ix, iy, 20, 20, 8.0f * k, 8.0f * k, region, region, skinW, skinH);
-            c.drawTexture(skin, ix, iy, 20, 20, 40.0f * k, 8.0f * k, region, region, skinW, skinH);
+            c.drawTexture(skin, ix, iy, is, is, 8.0f * k, 8.0f * k, region, region, skinW, skinH);
+            c.drawTexture(skin, ix, iy, is, is, 40.0f * k, 8.0f * k, region, region, skinW, skinH);
         } else {
-            c.fill(ix, iy, ix + 20, iy + 20, (accent & 0x00FFFFFF) | 0x44000000);
-            c.fill(ix, iy, ix + 20, iy + 1, accent);
-            c.fill(ix, iy + 19, ix + 20, iy + 20, accent);
-            c.fill(ix, iy, ix + 1, iy + 20, accent);
-            c.fill(ix + 19, iy, ix + 20, iy + 20, accent);
+            c.fill(ix, iy, ix + is, iy + is, (accent & 0x00FFFFFF) | 0x33000000);
             String glyph = switch (type) {
                 case SUCCESS -> "✓";
                 case ERROR -> "×";
                 case WARNING -> "!";
                 default -> "i";
             };
-            c.drawCenteredTextWithShadow(tr, Text.literal(glyph).formatted(Formatting.BOLD), ix + 10, iy + 6, accent);
+            c.drawCenteredTextWithShadow(tr, glyph, ix + is / 2, iy + 4, accent);
         }
 
-        int tx = 36;
-        c.drawText(tr, Text.literal(title).formatted(Formatting.BOLD), tx, 6, accent, false);
+        int tx = 28;
+        c.drawText(tr, title, tx, 4, accent, false);
         for (int i = 0; i < lines.size(); i++) {
-            c.drawText(tr, lines.get(i), tx, 18 + i * 10, 0xFFE0E0E8, false);
+            c.drawText(tr, lines.get(i), tx, 14 + i * 9, 0xFFCFD2DC, false);
         }
 
         float progress = 1.0f - Math.min(1.0f, (float) elapsed / (float) duration);
-        int barW = (int) ((width - 4) * progress);
-        if (barW > 0) c.fill(2, height - 3, 2 + barW, height - 1, (accent & 0x00FFFFFF) | 0xAA000000);
+        int barW = (int) ((width - 3) * progress);
+        if (barW > 0) c.fill(2, height - 1, 2 + barW, height, (accent & 0x00FFFFFF) | 0x99000000);
 
         return elapsed >= duration ? Visibility.HIDE : Visibility.SHOW;
     }

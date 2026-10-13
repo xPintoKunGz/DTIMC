@@ -103,6 +103,7 @@ public class SkinStorageScreen extends Screen {
     private ButtonWidget equipButton;
     private ButtonWidget toggleTypeButton;
     private ButtonWidget deleteButton;
+    private ButtonWidget removeButton;
     private ButtonWidget addSkinButton;
 
     // 3D preview
@@ -148,25 +149,17 @@ public class SkinStorageScreen extends Screen {
         refreshAndValidateStorage();
         lastRefresh = System.currentTimeMillis();
 
-        // top-left: back arrow (close on the main page) / top-right: Options
-        this.addDrawableChild(new LinkButton(8, 8, LinkButton.Icon.BACK,
-                t(parent == null ? "common.close" : "common.back"), () -> {
-            if (this.client != null) this.client.setScreen(parent);
-        }));
-        LinkButton options = new LinkButton(0, 8, LinkButton.Icon.OPTIONS, t("storage.options"), () -> {
-            if (this.client != null) this.client.setScreen(new OptionsScreen(this));
-        });
-        options.setX(width - 8 - options.getWidth());
-        this.addDrawableChild(options);
+        // top-left: back arrow -> main menu (SkinChangerScreen)
+        this.addDrawableChild(new LinkButton(8, 8, LinkButton.Icon.BACK, t("common.back"), this::goBack));
 
         int bx = rightX + 8;
         int bw = panelW - 16;
 
-        equipButton = new StyledButton(bx, topY + 142, bw, 20, Text.literal(t("storage.btn.equip")),
+        equipButton = new StyledButton(bx, topY + 130, bw, 20, Text.literal(t("storage.btn.equip")),
                 b -> equipSelectedSkin(), StyledButton.Style.PRIMARY);
         this.addDrawableChild(equipButton);
 
-        toggleTypeButton = new StyledButton(bx, topY + 166, bw, 20, Text.literal("Model"), b -> {
+        toggleTypeButton = new StyledButton(bx, topY + 152, bw, 20, Text.literal("Model"), b -> {
             SkinEntry entry = getSelectedEntry();
             if (entry != null) {
                 String newType = entry.modelType.equals("slim") ? "default" : "slim";
@@ -176,7 +169,11 @@ public class SkinStorageScreen extends Screen {
         }, StyledButton.Style.NORMAL);
         this.addDrawableChild(toggleTypeButton);
 
-        deleteButton = new StyledButton(bx, topY + 190, bw, 20, Text.literal(t("storage.btn.delete")),
+        removeButton = new StyledButton(bx, topY + 174, bw, 20, Text.literal(t("storage.btn.remove")),
+                b -> removeSelectedFromFolder(), StyledButton.Style.NORMAL);
+        this.addDrawableChild(removeButton);
+
+        deleteButton = new StyledButton(bx, topY + 196, bw, 20, Text.literal(t("storage.btn.delete")),
                 b -> startDeleteSkin(), StyledButton.Style.DANGER);
         this.addDrawableChild(deleteButton);
 
@@ -188,7 +185,7 @@ public class SkinStorageScreen extends Screen {
             for (SkinEntry existing : SkinStorageManager.getEntries()) {
                 entriesBeforeImport.add(existing.id);
             }
-            if (this.client != null) this.client.setScreen(new SkinChangerScreen(this));
+            if (this.client != null) this.client.setScreen(new SkinChangerScreen(this, currentCategory));
         }, StyledButton.Style.PRIMARY);
         this.addDrawableChild(addSkinButton);
     }
@@ -199,6 +196,7 @@ public class SkinStorageScreen extends Screen {
 
     public static void clearImportTargetCategory() {
         importTargetCategory = "All";
+        entriesBeforeImport.clear();
     }
 
     // ==================================================================
@@ -396,9 +394,9 @@ public class SkinStorageScreen extends Screen {
                 if (!skinCategories.containsKey(entry.id)) {
                     boolean newlyImported = !entriesBeforeImport.contains(entry.id);
                     String assignCat = "All";
-                    if (newlyImported && isCustomCategory(importTargetCategory)) {
+                    if (newlyImported && isCustomCategory(importTargetCategory) && categories.contains(importTargetCategory)) {
                         assignCat = importTargetCategory;
-                    } else if (isCustomCategory(currentCategory)) {
+                    } else if (isCustomCategory(currentCategory) && categories.contains(currentCategory)) {
                         assignCat = currentCategory;
                     }
                     skinCategories.put(entry.id, assignCat);
@@ -490,7 +488,10 @@ public class SkinStorageScreen extends Screen {
                     .rotateX((float) Math.toRadians(180f + modelPitch))
                     .rotateY((float) Math.toRadians(modelYaw));
 
-            InventoryScreen.drawEntity(context, x, y, 38, bodyRotation, null, previewPlayer);
+            // Clip to the preview box: the model can never draw over other panels, whatever angle it is rotated to.
+            context.enableScissor(rightX + 7, topY + 25, rightX + panelW - 7, topY + 123);
+            InventoryScreen.drawEntity(context, x, y, 33, bodyRotation, null, previewPlayer);
+            context.disableScissor();
         }
     }
 
@@ -540,6 +541,30 @@ public class SkinStorageScreen extends Screen {
         if (entry == null) return;
         pendingSkinId = entry.id;
         modal = Modal.DELETE_SKIN;
+    }
+
+    private void goBack() {
+        if (this.client != null) this.client.setScreen(parent != null ? parent : new SkinChangerScreen());
+    }
+
+    @Override
+    public void close() {
+        goBack();
+    }
+
+    /** Takes the selected skin out of its custom folder; it goes back to "All" (nothing is deleted). */
+    private void removeSelectedFromFolder() {
+        SkinEntry e = getSelectedEntry();
+        if (e == null || !isCustomCategory(currentCategory)) return;
+        if (!currentCategory.equals(skinCategories.get(e.id))) return;
+
+        int idx = indexOfId(getFilteredEntries(), e.id);
+        skinCategories.put(e.id, "All");
+        saveCategoryData();
+
+        List<SkinEntry> after = getFilteredEntries();
+        selectedId = after.isEmpty() ? null : after.get(Math.max(0, Math.min(idx, after.size() - 1))).id;
+        toast(ModToast.Type.SUCCESS, "storage.toast.removed", e.name);
     }
 
     private void startDeleteCategory() {
@@ -596,6 +621,7 @@ public class SkinStorageScreen extends Screen {
         if (catName == null || !isCustomCategory(catName)) return;
         skinCategories.values().removeIf(c -> c.equals(catName));
         categories.remove(catName);
+        if (catName.equals(importTargetCategory)) importTargetCategory = "All";
         currentCategory = "All";
         scrollOffset = 0;
         saveCategoryData();
@@ -728,6 +754,7 @@ public class SkinStorageScreen extends Screen {
                 int idx = categories.indexOf(oldCat);
                 if (idx >= 2) {
                     categories.set(idx, text);
+                    if (oldCat.equals(importTargetCategory)) importTargetCategory = text;
                     for (Map.Entry<String, String> entry : skinCategories.entrySet()) {
                         if (entry.getValue().equals(oldCat)) entry.setValue(text);
                     }
@@ -941,7 +968,7 @@ public class SkinStorageScreen extends Screen {
 
             // Preview rotation
             if (getSelectedEntry() != null
-                    && in(mouseX, mouseY, rightX + 6, topY + 24, panelW - 12, 112)) {
+                    && in(mouseX, mouseY, rightX + 6, topY + 24, panelW - 12, 100)) {
                 rotating = true;
                 return true;
             }
@@ -966,7 +993,7 @@ public class SkinStorageScreen extends Screen {
             }
             if (rotating) {
                 modelYaw += (float) deltaX * 1.5f;
-                modelPitch = Math.max(-80.0f, Math.min(80.0f, modelPitch + (float) deltaY * 1.5f));
+                modelPitch = Math.max(-20.0f, Math.min(20.0f, modelPitch + (float) deltaY * 1.5f));
                 return true;
             }
         }
@@ -1004,8 +1031,11 @@ public class SkinStorageScreen extends Screen {
             categoryScrollOffset = Math.max(0, categoryScrollOffset - amount * 18);
             return true;
         }
-        scrollOffset = Math.max(0, scrollOffset - amount * 18);
-        return true;
+        if (mouseX >= listX && mouseX < listX + panelW && mouseY >= topY && mouseY < topY + PANEL_H) {
+            scrollOffset = Math.max(0, scrollOffset - amount * 18);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, amount); // everywhere else: no scrolling
     }
 
     @Override
@@ -1114,6 +1144,10 @@ public class SkinStorageScreen extends Screen {
         equipButton.visible = !empty;
         toggleTypeButton.visible = !empty;
         deleteButton.visible = !empty;
+        boolean inCustom = isCustomCategory(currentCategory);
+        removeButton.visible = !empty && inCustom;
+        removeButton.setMessage(Text.literal(t("storage.btn.remove")));
+        deleteButton.setY(topY + (inCustom ? 196 : 174));
         addSkinButton.visible = empty && !currentCategory.equals("Favorites"); // Favorites: only the heart adds skins
         equipButton.setMessage(Text.literal(t("storage.btn.equip")));
         deleteButton.setMessage(Text.literal(t("storage.btn.delete")));
@@ -1465,17 +1499,17 @@ public class SkinStorageScreen extends Screen {
         c.drawCenteredTextWithShadow(textRenderer, fit("✦ " + e.name, panelW - 16),
                 rightX + panelW / 2, topY + 9, GOLD);
 
-        int bx1 = rightX + 6, by1 = topY + 24, bx2 = rightX + panelW - 6, by2 = topY + 136;
+        int bx1 = rightX + 6, by1 = topY + 24, bx2 = rightX + panelW - 6, by2 = topY + 124;
         c.fill(bx1, by1, bx2, by2, 0x66000000);
         c.fill(bx1, by2 - 1, bx2, by2, 0x22FFFFFF);
 
-        if (!overlayOpen) render3DPreview(c, rightX + panelW / 2, topY + 120);
+        if (!overlayOpen) render3DPreview(c, rightX + panelW / 2, topY + 104);
         if (previewPlayer == null) {
             c.drawCenteredTextWithShadow(textRenderer, t("storage.preview_unavailable"), rightX + panelW / 2,
-                    topY + 76, 0xFF666677);
+                    topY + 70, 0xFF666677);
         } else {
             c.drawCenteredTextWithShadow(textRenderer, t("storage.drag_rotate"), rightX + panelW / 2,
-                    topY + 125, 0xFF555566);
+                    topY + 113, 0xFF555566);
         }
     }
 
