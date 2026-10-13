@@ -1,4 +1,4 @@
-# KUI or Unified Interface
+# Bloomery Network X Devathip Interface
 
 ## EN (Main)
 
