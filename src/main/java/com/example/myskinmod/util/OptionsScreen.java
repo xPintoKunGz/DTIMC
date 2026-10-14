@@ -137,6 +137,7 @@ public class OptionsScreen extends Screen {
         // --- Streamer mode ---
         y = toggleRow(c, tr, mx, my, x, y, w, t("options.streamer"), t("options.streamer.desc"), s.streamerMode, () -> {
             s.streamerMode = !s.streamerMode;
+            if (s.streamerMode) s.hideBrowseWarning = false;
             ModSettings.save();
         });
 

@@ -100,11 +100,13 @@ public class SkinStorageScreen extends Screen {
     private static final Set<String> entriesBeforeImport = new HashSet<>();
 
     // Widgets
-    private ButtonWidget equipButton;
-    private ButtonWidget toggleTypeButton;
-    private ButtonWidget deleteButton;
-    private ButtonWidget removeButton;
-    private ButtonWidget addSkinButton;
+    private StyledButton equipButton;
+    private StyledButton toggleTypeButton;
+    private StyledButton deleteButton;
+    private StyledButton removeButton;
+    private StyledButton addSkinButton;
+    private StyledButton addToFolderButton;
+    private float zoom = 1.0f;
 
     // 3D preview
     private ClientPlayerEntity previewPlayer;
@@ -127,7 +129,6 @@ public class SkinStorageScreen extends Screen {
         this.parent = parent;
         SkinStorageManager.init();
         loadCategoryData();
-        this.announce = buildAnnouncement();
     }
 
     // ==================================================================
@@ -148,6 +149,17 @@ public class SkinStorageScreen extends Screen {
         computeLayout();
         refreshAndValidateStorage();
         lastRefresh = System.currentTimeMillis();
+
+        if (openCategoryOnInit != null) {
+            if (openCategoryOnInit.equals("All") || categories.contains(openCategoryOnInit)) currentCategory = openCategoryOnInit;
+            if (openSkinOnInit != null && findEntryById(openSkinOnInit) != null) {
+                selectedId = openSkinOnInit;
+                pendingScrollToSelected = true;
+            }
+            openCategoryOnInit = null;
+            openSkinOnInit = null;
+            scrollOffset = 0;
+        }
 
         // top-left: back arrow -> main menu (SkinChangerScreen)
         this.addDrawableChild(new LinkButton(8, 8, LinkButton.Icon.BACK, t("common.back"), this::goBack));
@@ -170,7 +182,7 @@ public class SkinStorageScreen extends Screen {
         this.addDrawableChild(toggleTypeButton);
 
         removeButton = new StyledButton(bx, topY + 174, bw, 20, Text.literal(t("storage.btn.remove")),
-                b -> removeSelectedFromFolder(), StyledButton.Style.NORMAL);
+                b -> removeSelectedFromFolder(), StyledButton.Style.WARN);
         this.addDrawableChild(removeButton);
 
         deleteButton = new StyledButton(bx, topY + 196, bw, 20, Text.literal(t("storage.btn.delete")),
@@ -179,19 +191,57 @@ public class SkinStorageScreen extends Screen {
 
         int importW = Math.min(180, panelW * 2 - 24);
         addSkinButton = new StyledButton(listX + (panelW * 2 + 8 - importW) / 2, topY + 124, importW, 22,
-                Text.literal(t("storage.btn.import")), b -> {
-            importTargetCategory = isCustomCategory(currentCategory) ? currentCategory : "All";
-            entriesBeforeImport.clear();
-            for (SkinEntry existing : SkinStorageManager.getEntries()) {
-                entriesBeforeImport.add(existing.id);
-            }
-            if (this.client != null) this.client.setScreen(new SkinChangerScreen(this, currentCategory));
-        }, StyledButton.Style.PRIMARY);
+                Text.literal(t("storage.btn.import")), b -> startImport(), StyledButton.Style.PRIMARY);
         this.addDrawableChild(addSkinButton);
+
+        // Custom folders only: keep adding skins straight into the folder you are looking at
+        addToFolderButton = new StyledButton(listX + 6, topY + PANEL_H - 26, panelW - 12, 20,
+                Text.literal(t("storage.btn.add_here")), b -> startImport(), StyledButton.Style.FOLDER);
+        this.addDrawableChild(addToFolderButton);
+    }
+
+    /** Opens the import menu for the current folder (the menu shows which folder the skin is added to). */
+    private void startImport() {
+        importTargetCategory = isCustomCategory(currentCategory) ? currentCategory : "All";
+        entriesBeforeImport.clear();
+        for (SkinEntry existing : SkinStorageManager.getEntries()) {
+            entriesBeforeImport.add(existing.id);
+        }
+        if (this.client != null) this.client.setScreen(new SkinChangerScreen(this, currentCategory));
     }
 
     public static String getImportTargetCategory() {
         return importTargetCategory;
+    }
+
+    private static final Map<String, String> pendingAssignments = new HashMap<>();
+    private static String openCategoryOnInit = null;
+    private static String openSkinOnInit = null;
+
+    /** After the type screen saved a skin: put it in this folder and open the Storage on it. */
+    public static void assignCategoryOnOpen(String skinId, String category) {
+        pendingAssignments.put(skinId, category);
+        openCategoryOnInit = category;
+        openSkinOnInit = skinId;
+    }
+
+    /** Names of the custom folders, read straight from the config file. */
+    public static List<String> readCustomCategories() {
+        List<String> result = new ArrayList<>();
+        try {
+            Path path = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/myskinmod_storage.json");
+            if (!Files.exists(path)) return result;
+            JsonObject root = new Gson().fromJson(Files.readString(path), JsonObject.class);
+            if (root != null && root.has("customCategories")) {
+                for (JsonElement el : root.getAsJsonArray("customCategories")) {
+                    String name = el.getAsString();
+                    if (!result.contains(name) && isCustomCategory(name)) result.add(name);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return result;
     }
 
     public static void clearImportTargetCategory() {
@@ -292,26 +342,6 @@ public class SkinStorageScreen extends Screen {
         ModToast.show(type, t("storage.toast.title"), t(key, args));
     }
 
-    private ModalOverlay buildAnnouncement() {
-        if (!Changelog.shouldAnnounce()) return null;
-        Changelog.markSeen(); // shown once per version
-        Changelog.Release r = Changelog.latest();
-        List<String> lines = new ArrayList<>();
-        int n = 0;
-        for (String key : r.keys()) {
-            if (n++ >= 6) break;
-            lines.add("• " + t(key));
-        }
-        lines.add(t("announce.more"));
-        return new ModalOverlay(t("announce.title", r.version()), lines, ACCENT)
-                .button(t("announce.close"), 0xFF18785A, 0xFF269B75, true, () -> { })
-                .button(t("announce.dont_show"), 0xFF454A56, 0xFF646B7A, false, () -> {
-                    ModSettings.get().showUpdatePopup = false;
-                    ModSettings.save();
-                })
-                .onEscape(() -> { });
-    }
-
     private boolean announceActive() {
         if (announce != null && announce.isClosed()) announce = null;
         return announce != null;
@@ -390,6 +420,12 @@ public class SkinStorageScreen extends Screen {
                 if (!skinOrder.contains(entry.id)) skinOrder.add(entry.id);
                 if (!loadedTextures.containsKey(entry.id)) loadTextureForEntry(entry);
 
+                String pending = pendingAssignments.remove(entry.id);
+                if (pending != null && (pending.equals("All") || categories.contains(pending))) {
+                    skinCategories.put(entry.id, pending);
+                    saveCategoryData();
+                }
+
                 // A brand new skin is bound to the folder it was imported into.
                 if (!skinCategories.containsKey(entry.id)) {
                     boolean newlyImported = !entriesBeforeImport.contains(entry.id);
@@ -455,6 +491,7 @@ public class SkinStorageScreen extends Screen {
             if (newSkin) {
                 modelYaw = 0.0f;
                 modelPitch = 0.0f;
+                zoom = 1.0f;
             }
             createPreviewPlayerForSelected();
         }
@@ -490,7 +527,9 @@ public class SkinStorageScreen extends Screen {
 
             // Clip to the preview box: the model can never draw over other panels, whatever angle it is rotated to.
             context.enableScissor(rightX + 7, topY + 25, rightX + panelW - 7, topY + 123);
-            InventoryScreen.drawEntity(context, x, y, 33, bodyRotation, null, previewPlayer);
+            int size = Math.max(10, Math.round(33 * zoom));
+            int feetY = Math.round(y - 0.9f * 33 + 0.9f * size); // zoom around the model's centre
+            InventoryScreen.drawEntity(context, x, feetY, size, bodyRotation, null, previewPlayer);
             context.disableScissor();
         }
     }
@@ -804,7 +843,7 @@ public class SkinStorageScreen extends Screen {
 
     private int listTop() { return topY + 26; }
 
-    private int listBottom() { return topY + PANEL_H - 4; }
+    private int listBottom() { return topY + PANEL_H - (isCustomCategory(currentCategory) ? 30 : 4); }
 
     private int categoryAt(double mx, double my) {
         if (mx < startX + 4 || mx >= startX + catW - 4) return -1;
@@ -1027,6 +1066,10 @@ public class SkinStorageScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (modal != Modal.NONE || announceActive()) return true;
         computeLayout();
+        if (getSelectedEntry() != null && in(mouseX, mouseY, rightX + 6, topY + 24, panelW - 12, 100)) {
+            zoom = (float) Math.max(0.7, Math.min(2.2, zoom + amount * 0.1)); // wheel over the preview = zoom
+            return true;
+        }
         if (mouseX >= startX && mouseX <= startX + catW && mouseY >= customTop() && mouseY < customBottom()) {
             categoryScrollOffset = Math.max(0, categoryScrollOffset - amount * 18);
             return true;
@@ -1146,8 +1189,18 @@ public class SkinStorageScreen extends Screen {
         deleteButton.visible = !empty;
         boolean inCustom = isCustomCategory(currentCategory);
         removeButton.visible = !empty && inCustom;
+        addToFolderButton.visible = !empty && inCustom;
         removeButton.setMessage(Text.literal(t("storage.btn.remove")));
-        deleteButton.setY(topY + (inCustom ? 196 : 174));
+        addToFolderButton.setMessage(Text.literal(t("storage.btn.add_here")));
+        {
+            StyledButton[] stack = inCustom
+                    ? new StyledButton[]{equipButton, toggleTypeButton, removeButton, deleteButton}
+                    : new StyledButton[]{equipButton, toggleTypeButton, deleteButton};
+            int areaTop = topY + 130, areaH = PANEL_H - 130 - 10;
+            int gap = inCustom ? 3 : 4;
+            int bh = (areaH - gap * (stack.length - 1)) / stack.length;
+            for (int i = 0; i < stack.length; i++) stack[i].setBounds(areaTop + i * (bh + gap), bh);
+        }
         addSkinButton.visible = empty && !currentCategory.equals("Favorites"); // Favorites: only the heart adds skins
         equipButton.setMessage(Text.literal(t("storage.btn.equip")));
         deleteButton.setMessage(Text.literal(t("storage.btn.delete")));
@@ -1503,12 +1556,12 @@ public class SkinStorageScreen extends Screen {
         c.fill(bx1, by1, bx2, by2, 0x66000000);
         c.fill(bx1, by2 - 1, bx2, by2, 0x22FFFFFF);
 
-        if (!overlayOpen) render3DPreview(c, rightX + panelW / 2, topY + 104);
+        render3DPreview(c, rightX + panelW / 2, topY + 104); // dialogs are drawn above it, so it never disappears
         if (previewPlayer == null) {
             c.drawCenteredTextWithShadow(textRenderer, t("storage.preview_unavailable"), rightX + panelW / 2,
                     topY + 70, 0xFF666677);
         } else {
-            c.drawCenteredTextWithShadow(textRenderer, t("storage.drag_rotate"), rightX + panelW / 2,
+            c.drawCenteredTextWithShadow(textRenderer, fit(t("storage.drag_rotate"), panelW - 16), rightX + panelW / 2,
                     topY + 113, 0xFF555566);
         }
     }

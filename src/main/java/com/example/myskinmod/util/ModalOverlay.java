@@ -8,6 +8,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Generic confirmation dialog drawn above EVERYTHING (z = 3000, so 3D previews and widgets can't poke through),
@@ -24,6 +25,12 @@ public final class ModalOverlay {
     private Runnable onEscape;
     private boolean closed;
 
+    // optional "don't show again" style tick box
+    private String checkLabel;
+    private boolean checked;
+    private Consumer<Boolean> checkHandler;
+    private int[] checkRect;
+
     public ModalOverlay(String title, List<String> lines, int accent) {
         this.title = title;
         this.lines = lines;
@@ -33,6 +40,18 @@ public final class ModalOverlay {
     public ModalOverlay button(String label, int base, int hover, boolean primary, Runnable action) {
         buttons.add(new Btn(label, base, hover, primary, action));
         return this;
+    }
+
+    /** Adds a tick box above the buttons. The handler receives the final state when the dialog is dismissed. */
+    public ModalOverlay checkbox(String label, boolean initial, Consumer<Boolean> onDismiss) {
+        this.checkLabel = label;
+        this.checked = initial;
+        this.checkHandler = onDismiss;
+        return this;
+    }
+
+    private void finish() {
+        if (checkHandler != null) checkHandler.accept(checked);
     }
 
     public ModalOverlay onEscape(Runnable r) {
@@ -54,7 +73,8 @@ public final class ModalOverlay {
         boolean stacked = n >= 3;
         int btnH = 20;
         int btnArea = stacked ? n * btnH + (n - 1) * 4 : btnH;
-        int dlgH = 16 + 12 + 10 + wrapped.size() * 11 + 14 + btnArea + 14;
+        int checkH = checkLabel != null ? 20 : 0;
+        int dlgH = 16 + 12 + 10 + wrapped.size() * 11 + 14 + checkH + btnArea + 14;
         int x = (sw - dlgW) / 2, y = (sh - dlgH) / 2;
 
         c.getMatrices().push();
@@ -74,6 +94,25 @@ public final class ModalOverlay {
 
         rects.clear();
         int by = y + dlgH - 14 - btnArea;
+
+        if (checkLabel != null) {
+            int cy = by - 20;
+            int boxX = x + 16;
+            String label = UiKit.fit(tr, checkLabel, innerW - 20);
+            checkRect = new int[]{boxX, cy, 20 + tr.getWidth(label), 12};
+            boolean over = UiKit.in(mx, my, checkRect[0], checkRect[1], checkRect[2], checkRect[3]);
+            c.fill(boxX, cy, boxX + 12, cy + 12, over ? 0xFF6C7186 : 0xFF454A56);
+            c.fill(boxX + 1, cy + 1, boxX + 11, cy + 11, 0xFF101014);
+            if (checked) {
+                c.fill(boxX + 3, cy + 6, boxX + 5, cy + 9, accent);   // tick
+                c.fill(boxX + 4, cy + 7, boxX + 6, cy + 10, accent);
+                c.fill(boxX + 5, cy + 5, boxX + 7, cy + 8, accent);
+                c.fill(boxX + 6, cy + 3, boxX + 9, cy + 6, accent);
+            }
+            c.drawText(tr, label, boxX + 18, cy + 2, 0xFFD0D4E0, false);
+        } else {
+            checkRect = null;
+        }
         for (int i = 0; i < n; i++) {
             int bx, bw, byy;
             if (stacked) {
@@ -98,10 +137,15 @@ public final class ModalOverlay {
     /** Swallows every click; runs the button that was hit. */
     public boolean mouseClicked(double mx, double my, int button) {
         if (button == 0) {
+            if (checkRect != null && UiKit.in(mx, my, checkRect[0], checkRect[1], checkRect[2], checkRect[3])) {
+                checked = !checked;
+                return true;
+            }
             for (int i = 0; i < rects.size(); i++) {
                 int[] r = rects.get(i);
                 if (UiKit.in(mx, my, r[0], r[1], r[2], r[3])) {
                     closed = true;
+                    finish();
                     buttons.get(i).action.run();
                     break;
                 }
@@ -113,11 +157,13 @@ public final class ModalOverlay {
     public boolean keyPressed(int keyCode) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             closed = true;
+            finish();
             if (onEscape != null) onEscape.run();
         } else if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             for (Btn b : buttons) {
                 if (b.primary) {
                     closed = true;
+                    finish();
                     b.action.run();
                     break;
                 }

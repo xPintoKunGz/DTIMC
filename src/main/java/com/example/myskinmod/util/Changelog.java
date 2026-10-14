@@ -5,11 +5,13 @@ import java.util.List;
 /** Release notes. The text of every line is a key in assets/myskinmod/lang/*.json */
 public final class Changelog {
     /** Bump this on every release: the update popup appears once per new version. */
-    public static final String CURRENT_VERSION = "1.2.1";
+    public static final String CURRENT_VERSION = "1.2.2";
 
     public record Release(String version, String date, List<String> keys) { }
 
     public static final List<Release> RELEASES = List.of(
+            new Release("1.2.2", "2026-10-13", List.of(
+                    "changelog.1_2_2.1", "changelog.1_2_2.2", "changelog.1_2_2.3", "changelog.1_2_2.4", "changelog.1_2_2.5")),
             new Release("1.2.1", "2026-10-13", List.of(
                     "changelog.1_2_1.1", "changelog.1_2_1.2", "changelog.1_2_1.3",
                     "changelog.1_2_1.4", "changelog.1_2_1.5", "changelog.1_2_1.6")),

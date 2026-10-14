@@ -15,6 +15,10 @@ public final class ModSettings {
     /** false = the user pressed "don't show again" */
     public boolean showUpdatePopup = true;
     public String lastSeenVersion = "";
+    /** true = the Streamer Mode file-window warning is not shown any more */
+    public boolean hideBrowseWarning = false;
+    /** lets us switch things on once when a new settings version arrives */
+    public int settingsVersion = 0;
 
     private static ModSettings instance;
 
@@ -35,13 +39,26 @@ public final class ModSettings {
                 if (s != null) {
                     if (s.language == null) s.language = "auto";
                     if (s.lastSeenVersion == null) s.lastSeenVersion = "";
+                    migrate(s);
                     return s;
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return new ModSettings();
+        ModSettings fresh = new ModSettings();
+        migrate(fresh);
+        return fresh;
+    }
+
+    /** Version 2: update announcements are switched ON once; after that the player's choice is respected. */
+    private static void migrate(ModSettings s) {
+        if (s.settingsVersion < 2) {
+            s.showUpdatePopup = true;
+            s.settingsVersion = 2;
+            instance = s;
+            save();
+        }
     }
 
     public static void save() {

@@ -1,5 +1,6 @@
 package com.example.myskinmod;
 
+import com.example.myskinmod.util.OptionsScreen;
 import com.example.myskinmod.gui.SkinStorageScreen;
 import com.example.myskinmod.util.*;
 import net.fabricmc.api.EnvType;
@@ -23,6 +24,7 @@ import org.lwjgl.system.Pointer;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -67,6 +69,32 @@ public class SkinChangerScreen extends Screen {
         this.targetCategory = targetCategory;
         // Opened from the main menu itself: skins go to "All", forget any earlier folder choice.
         if (targetCategory == null) SkinStorageScreen.clearImportTargetCategory();
+        // What's-new popup: only ever shown from this menu (once per version, unless the player opted out)
+        this.overlay = Changelog.shouldAnnounce() ? buildAnnouncement() : null;
+    }
+
+    private ModalOverlay buildAnnouncement() {
+        Changelog.markSeen();
+        Changelog.Release r = Changelog.latest();
+        List<String> lines = new ArrayList<>();
+        int n = 0;
+        for (String key : r.keys()) {
+            if (n++ >= 6) break;
+            lines.add("• " + t(key));
+        }
+        lines.add(t("announce.more"));
+        return new ModalOverlay(t("announce.title", r.version()), lines, UiKit.ACCENT)
+                .button(t("announce.close"), 0xFF18785A, 0xFF269B75, true, () -> { })
+                .button(t("announce.dont_show"), 0xFF454A56, 0xFF646B7A, false, () -> {
+                    ModSettings.get().showUpdatePopup = false;
+                    ModSettings.save();
+                })
+                .onEscape(() -> { });
+    }
+
+    /** Folder the skin is being added to (null when opened from the main menu itself). */
+    public String getTargetCategory() {
+        return targetCategory;
     }
 
     public Screen getReturnScreen() {
@@ -122,20 +150,20 @@ public class SkinChangerScreen extends Screen {
         this.addDrawableChild(urlField);
 
         this.addDrawableChild(new StyledButton(fx + fw - browseW, fieldY, browseW, 22,
-                Text.literal(t("changer.browse")), b -> onBrowse(), StyledButton.Style.NORMAL));
+                Text.literal(t("changer.browse")), b -> onBrowse(), StyledButton.Style.NORMAL).icon(Icons.Type.FOLDER));
 
         loadButton = new StyledButton(fx, fieldY + 28, fw, 22, Text.literal(t("changer.load")),
-                b -> loadFromField(), StyledButton.Style.PRIMARY);
+                b -> loadFromField(), StyledButton.Style.PRIMARY).icon(Icons.Type.DOWNLOAD);
         this.addDrawableChild(loadButton);
 
         // main menu buttons
         int rowY = top + 174 + by;
         int storageW = (fw - 6) * 6 / 10;
         this.addDrawableChild(new StyledButton(fx, rowY, storageW, 22, Text.literal(t("changer.btn.storage")),
-                b -> mc.setScreen(new SkinStorageScreen(this)), StyledButton.Style.NORMAL));
+                b -> mc.setScreen(new SkinStorageScreen(this)), StyledButton.Style.NORMAL).icon(Icons.Type.CLOUD));
         this.addDrawableChild(new StyledButton(fx + storageW + 6, rowY, fw - storageW - 6, 22,
                 Text.literal(t("changer.btn.settings")), b -> mc.setScreen(new OptionsScreen(this)),
-                StyledButton.Style.NORMAL));
+                StyledButton.Style.NORMAL).icon(Icons.Type.GEAR));
     }
 
     // ------------------------------------------------------------------ import actions
@@ -151,11 +179,17 @@ public class SkinChangerScreen extends Screen {
 
     private void onBrowse() {
         if (browseOpen || busy) return;
-        if (Privacy.enabled()) {
+        if (Privacy.enabled() && !ModSettings.get().hideBrowseWarning) {
             overlay = new ModalOverlay(t("streamer.browse.title"),
                     List.of(t("streamer.browse.line1"), t("streamer.browse.line2")), UiKit.GOLD)
                     .button(t("common.cancel"), 0xFF55555F, 0xFF737B8C, false, () -> { })
                     .button(t("streamer.browse.continue"), 0xFFB7791F, 0xFFD99A2B, false, this::openFileExplorer)
+                    .checkbox(t("streamer.browse.dont_show"), false, v -> {
+                        if (v) {
+                            ModSettings.get().hideBrowseWarning = true;
+                            ModSettings.save();
+                        }
+                    })
                     .onEscape(() -> { });
         } else {
             openFileExplorer();

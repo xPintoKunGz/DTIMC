@@ -7,10 +7,11 @@ import net.minecraft.text.Text;
 
 /** Flat button in the Skin Storage style. */
 public class StyledButton extends ButtonWidget {
-    public enum Style { NORMAL, PRIMARY, DANGER }
+    public enum Style { NORMAL, PRIMARY, DANGER, WARN, FOLDER }
 
     private final Style style;
     private boolean selected;
+    private Icons.Type icon;
 
     public StyledButton(int x, int y, int w, int h, Text message, PressAction onPress, Style style) {
         super(x, y, w, h, message, onPress, DEFAULT_NARRATION_SUPPLIER);
@@ -21,6 +22,17 @@ public class StyledButton extends ButtonWidget {
     public StyledButton setSelectedState(boolean selected) {
         this.selected = selected;
         return this;
+    }
+
+    public StyledButton icon(Icons.Type icon) {
+        this.icon = icon;
+        return this;
+    }
+
+    /** Re-position vertically and change the height (used for the dynamic button stack). */
+    public void setBounds(int y, int h) {
+        this.setY(y);
+        this.height = h;
     }
 
     @Override
@@ -41,6 +53,8 @@ public class StyledButton extends ButtonWidget {
             switch (style) {
                 case PRIMARY -> bg = hover ? 0xFF269B75 : 0xFF18785A;
                 case DANGER -> bg = hover ? 0xFFB83232 : 0xFF7A2A2F;
+                case WARN -> bg = hover ? 0xFFC77F1E : 0xFF8F5A12;
+                case FOLDER -> bg = hover ? 0xFF5E49A8 : 0xFF4B3A86;
                 default -> bg = hover ? 0xFF343A52 : 0xFF262A38;
             }
             topLine = hover ? UiKit.ACCENT : 0x55FFFFFF;
@@ -52,8 +66,15 @@ public class StyledButton extends ButtonWidget {
         if (selected) c.fill(x1, y2 - 2, x2, y2, UiKit.ACCENT);
 
         var tr = MinecraftClient.getInstance().textRenderer;
-        String label = UiKit.fit(tr, getMessage().getString(), width - 8);
-        int ty = y1 + (height - 8) / 2 + (hover && !selected ? 0 : 0);
-        c.drawCenteredTextWithShadow(tr, Text.literal(label).setStyle(getMessage().getStyle()), (x1 + x2) / 2, ty, textColor);
+        int iconSpace = icon != null ? Icons.W + 5 : 0;
+        String label = UiKit.fit(tr, getMessage().getString(), width - 8 - iconSpace);
+        int ty = y1 + (height - 8) / 2;
+        int contentW = iconSpace + tr.getWidth(label);
+        int startX = x1 + (width - contentW) / 2;
+        if (icon != null) {
+            int iconColor = !this.active ? 0xFF666677 : 0xFFFFFFFF;
+            Icons.draw(c, icon, startX, y1 + (height - Icons.H) / 2, iconColor, bg);
+        }
+        c.drawTextWithShadow(tr, Text.literal(label).setStyle(getMessage().getStyle()), startX + iconSpace, ty, textColor);
     }
 }

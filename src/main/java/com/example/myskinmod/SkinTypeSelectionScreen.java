@@ -42,6 +42,12 @@ public class SkinTypeSelectionScreen extends Screen {
     private float modelPitch = 0f;
     private boolean rotating = false;
     private boolean pathHover = false;
+    private boolean pathOverflow = false;
+    private int pathBoxX, pathBoxY, pathBoxW, pathTextW, pathInnerW;
+    private double pathScroll = 0;
+    private float zoom = 1.0f;
+    private FolderPicker picker;
+    private String chosenCategory = "All";
 
     private StyledButton classicButton, slimButton;
     private ModalOverlay overlay;
@@ -235,6 +241,30 @@ public class SkinTypeSelectionScreen extends Screen {
             ModToast.warning(t("type.err.notready.title"), t("type.err.notready.msg"));
             return;
         }
+        List<String> customs = SkinStorageScreen.readCustomCategories();
+        if (customs.isEmpty()) { // nothing to choose from: it goes to "All"
+            chosenCategory = "All";
+            checkDuplicatesAndSave();
+            return;
+        }
+
+        String suggested = null;
+        if (parent instanceof SkinChangerScreen sc) {
+            String target = sc.getTargetCategory();
+            if ("All".equals(target) || (target != null && customs.contains(target))) suggested = target;
+        }
+        List<FolderPicker.Option> options = new ArrayList<>();
+        options.add(new FolderPicker.Option("All", t("type.pick.all"), true));
+        for (String name : customs) options.add(new FolderPicker.Option(name, name, false));
+
+        picker = new FolderPicker(t("type.pick.title"), t("type.pick.subtitle"), options, suggested,
+                id -> {
+                    chosenCategory = id;
+                    checkDuplicatesAndSave();
+                }, () -> { });
+    }
+
+    private void checkDuplicatesAndSave() {
         List<SkinEntry> dups = SkinStorageManager.findDuplicates(skinImage);
         if (dups.isEmpty()) {
             doSave(SaveMode.NEW);
@@ -267,6 +297,9 @@ public class SkinTypeSelectionScreen extends Screen {
             ModToast.error(t("type.err.save.title"), t("type.err.save.msg"));
             return;
         }
+        // the Storage opens on the chosen folder with this skin selected
+        SkinStorageScreen.assignCategoryOnOpen(saved.id, chosenCategory);
+        SkinStorageScreen.clearImportTargetCategory();
         ModToast.show(ModToast.Type.SUCCESS,
                 mode == SaveMode.OVERWRITE ? t("type.toast.overwritten.title") : t("type.toast.saved.title"),
                 t("type.toast.saved.msg", saved.name), previewSkinId,
@@ -288,7 +321,7 @@ public class SkinTypeSelectionScreen extends Screen {
     public void render(DrawContext c, int mouseX, int mouseY, float delta) {
         computeLayout();
         this.renderBackground(c);
-        boolean modal = overlay != null && !overlay.isClosed();
+        boolean modal = overlayActive();
         int mx = modal ? -9999 : mouseX, my = modal ? -9999 : mouseY;
         TextRenderer tr = this.textRenderer;
 
@@ -299,11 +332,11 @@ public class SkinTypeSelectionScreen extends Screen {
         c.drawText(tr, t("type.preview"), leftX + 10, topY + 9, UiKit.GOLD, false);
         UiKit.inset(c, leftX + 6, topY + 28, leftW - 12, panelH - 36, 0x22FFFFFF);
 
-        if (!modal) render3DPreview(c, leftX + leftW / 2, topY + 28 + (int) (0.82 * (panelH - 36)));
+        render3DPreview(c, leftX + leftW / 2, topY + 28 + (int) (0.82 * (panelH - 36))); // stays visible under dialogs
         if (previewPlayer == null) {
             c.drawCenteredTextWithShadow(tr, t("type.loading"), leftX + leftW / 2, topY + panelH / 2, 0xFFAAAAAA);
         } else {
-            c.drawCenteredTextWithShadow(tr, t("type.drag_rotate"), leftX + leftW / 2, topY + panelH - 20, 0xFF555566);
+            c.drawCenteredTextWithShadow(tr, UiKit.fit(tr, t("type.drag_rotate"), leftW - 16), leftX + leftW / 2, topY + panelH - 20, 0xFF555566);
         }
 
         // ---------- right: details + actions ----------
@@ -340,6 +373,7 @@ public class SkinTypeSelectionScreen extends Screen {
         else srcLabel = Files.exists(Paths.get(skinUrl)) ? t("type.source.file") : t("type.source.invalid");
         c.drawText(tr, srcLabel, bx, sy, 0xFF8A8FA3, false);
         pathHover = false;
+        pathOverflow = false;
         if (skinUrl != null && !skinUrl.isEmpty()) {
             int w = rightW - 20;
             int boxY = sy + 11;
@@ -353,11 +387,20 @@ public class SkinTypeSelectionScreen extends Screen {
             } else {
                 boolean over = UiKit.in(mx, my, bx, boxY, w, 14);
                 pathHover = over;
+                pathOverflow = true;
+                pathBoxX = bx;
+                pathBoxY = boxY;
+                pathBoxW = w;
+                pathTextW = textW;
+                pathInnerW = innerW;
+                pathScroll = Math.max(0, Math.min(textW - innerW, pathScroll));
                 c.enableScissor(bx + 3, boxY + 1, bx + w - 3, boxY + 13);
                 if (over && Screen.hasShiftDown()) {
-                    // Shift + move the mouse along the box: the path slides so every part can be read
-                    double frac = Math.max(0, Math.min(1, (mx - (bx + 4)) / (double) innerW));
-                    c.drawText(tr, skinUrl, bx + 4 - (int) ((textW - innerW) * frac), boxY + 3, 0xFFFFE08A, false);
+                    // Shift + mouse wheel slides the path left / right
+                    c.drawText(tr, skinUrl, bx + 4 - (int) pathScroll, boxY + 3, 0xFFFFE08A, false);
+                    int barW = Math.max(10, (int) (innerW * (innerW / (double) textW)));
+                    int barX = bx + 4 + (int) ((innerW - barW) * (pathScroll / (textW - innerW)));
+                    c.fill(barX, boxY + 12, barX + barW, boxY + 13, UiKit.ACCENT);
                 } else {
                     c.drawText(tr, UiKit.fitTail(tr, skinUrl, innerW), bx + 4, boxY + 3, 0xFF55FF55, false);
                 }
@@ -375,8 +418,8 @@ public class SkinTypeSelectionScreen extends Screen {
         }
 
         Privacy.badge(c, tr, height);
-        if (modal) overlay.render(c, tr, width, height, mouseX, mouseY);
-        else if (overlay != null) overlay = null;
+        if (picker != null && !picker.isClosed()) picker.render(c, tr, width, height, mouseX, mouseY);
+        else if (overlay != null && !overlay.isClosed()) overlay.render(c, tr, width, height, mouseX, mouseY);
     }
 
     private void render3DPreview(DrawContext c, int x, int y) {
@@ -395,24 +438,28 @@ public class SkinTypeSelectionScreen extends Screen {
         previewPlayer.limbAnimator.setSpeed(0.0f);
 
         // ~60% of the preview box height, so it still fits when rotated
-        int size = Math.max(24, (int) (0.60 * (panelH - 36) / 1.8));
+        int base = Math.max(24, (int) (0.60 * (panelH - 36) / 1.8));
+        int size = Math.max(10, Math.round(base * zoom));
+        int feetY = Math.round(y - 0.9f * base + 0.9f * size); // zoom around the centre of the model
 
         // Clip to the preview box: the model never draws over other panels or buttons, at any angle.
         c.enableScissor(leftX + 7, topY + 29, leftX + leftW - 7, topY + panelH - 9);
-        InventoryScreen.drawEntity(c, x, y, size, rotation, null, previewPlayer);
+        InventoryScreen.drawEntity(c, x, feetY, size, rotation, null, previewPlayer);
         c.disableScissor();
     }
 
     // ------------------------------------------------------------------ input
     private boolean overlayActive() {
+        if (picker != null && picker.isClosed()) picker = null;
         if (overlay != null && overlay.isClosed()) overlay = null;
-        return overlay != null;
+        return picker != null || overlay != null;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (overlayActive()) {
-            overlay.mouseClicked(mouseX, mouseY, button);
+            if (picker != null) picker.mouseClicked(mouseX, mouseY, button);
+            else overlay.mouseClicked(mouseX, mouseY, button);
             return true;
         }
         if (button == 0 && UiKit.in(mouseX, mouseY, leftX, topY, leftW, panelH)) rotating = true;
@@ -438,8 +485,27 @@ public class SkinTypeSelectionScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (overlayActive()) return overlay.keyPressed(keyCode);
+        if (overlayActive()) return picker != null ? picker.keyPressed(keyCode) : overlay.keyPressed(keyCode);
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        if (overlayActive()) {
+            if (picker != null) picker.mouseScrolled(amount);
+            return true;
+        }
+        // Shift + wheel over the path box: slide the path
+        if (pathOverflow && Screen.hasShiftDown() && UiKit.in(mouseX, mouseY, pathBoxX, pathBoxY, pathBoxW, 14)) {
+            pathScroll = Math.max(0, Math.min(pathTextW - pathInnerW, pathScroll - amount * 14));
+            return true;
+        }
+        // wheel over the skin preview: zoom in / out
+        if (UiKit.in(mouseX, mouseY, leftX + 6, topY + 28, leftW - 12, panelH - 36)) {
+            zoom = (float) Math.max(0.7, Math.min(2.2, zoom + amount * 0.1));
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, amount);
     }
 
     /** Back arrow and Esc: release the temporary skin and return to the import page. */
