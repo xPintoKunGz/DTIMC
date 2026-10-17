@@ -3,6 +3,7 @@
 
 A comprehensive Minecraft modification designed for character customization. Manage, apply high-resolution (HD) skins, and organize your personal skin cloud storage effortlessly—all within the game interface without needing third-party websites.
 
+---
 
 ## 📋 Key Features
 
@@ -13,12 +14,14 @@ A comprehensive Minecraft modification designed for character customization. Man
 - **⭐ Model Type Customization:** Easily toggle between **Classic (Default)** and **Slim (Alex)** arm model variants.
 - **⭐ Cloud Skin Storage & Categories:** Store your skin library locally, organize textures into custom folders/categories, and mark your top picks using the **Favorites (❤️)** feature.
 
+---
 
 ## 🚧 Roadmap  & Upcoming Features
 
 - ❌ **Mod Ecosystem Integration:** Planned compatibility for popular mods, including *Figma*, *Simple Voice Chat*, *Plasmo Voice*, and *Emotechat*.
 - ❌ **Client-Side Multiplayer Sync:** A dedicated client-side network renderer that allows other players using the mod to see your custom HD skins in multiplayer environments *(In Active Development)*.
 
+---
 
 ## 📦 Installation
 
@@ -26,12 +29,15 @@ A comprehensive Minecraft modification designed for character customization. Man
 2. Download the latest `.jar` build from the [Releases](../../releases) tab.
 3. Place the downloaded `.jar` file into your Minecraft instance's `mods` directory (`.minecraft/mods`).
 4. Launch the game and enjoy!
+
+---
     
 ## 💡 Usage Guide
 
 - Press **`K`** in-game to open the primary **Skin Changer** UI or navigate directly to the **Skin Storage Cloud**.
 - Organize your wardrobe by creating custom categories, reordering profiles inline, renaming skins, and pinning favorites.
 
+---
 
 ## 💻 Building from Source
 
@@ -55,7 +61,7 @@ To set up the development environment, modify the codebase, or compile the build
    ./gradlew runClient
    ```
 
-
+---
 
 ## 📄 License
 
