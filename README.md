@@ -34,7 +34,7 @@ A comprehensive Minecraft modification designed for character customization. Man
     
 ## 💡 Usage Guide
 
-- Press **`K`** in-game to open the primary **Skin Changer** UI or navigate directly to the **Skin Storage Cloud**.
+- Press **`R`** in-game to open the primary **Skin Changer** UI or navigate directly to the **Skin Storage Cloud**.
 - Organize your wardrobe by creating custom categories, reordering profiles inline, renaming skins, and pinning favorites.
 
 ---
