@@ -25,10 +25,36 @@ A comprehensive Minecraft modification designed for character customization. Man
 
 ## 📦 Installation
 
-1. Download and install [Fabric Loader](https://fabricmc.net/) for **Minecraft 1.20.1**.
-2. Download the latest `.jar` build from the [Releases](../../releases) tab.
-3. Place the downloaded `.jar` file into your Minecraft instance's `mods` directory (`.minecraft/mods`).
-4. Launch the game and enjoy!
+Since **MySkinMod** functions as a **Client-Side** multiplayer mod, installation is straightforward and requires no server-side modifications!
+
+### 📋 Prerequisites
+1. **Minecraft Java Edition** version `1.20.1`.
+2. [Fabric Loader](https://fabricmc.net/) version `0.16.10` or higher.
+3. **Fabric API** installed in your `.minecraft/mods` directory.
+
+---
+
+### 🚀 Step-by-Step Guide
+
+1. **Download the Mod**:
+   - Get the latest release `.jar` file from the [Releases](https://github.com/your-repo/releases) page.
+
+2. **Locate your Mods Folder**:
+   - **Windows**: Press `Win + R`, type `%appdata%\.minecraft\mods`, and press **Enter**.
+   - **macOS**: `~/Library/Application Support/minecraft/mods`
+   - **Linux**: `~/.minecraft/mods`
+
+3. **Install**:
+   - Place the downloaded `myskinmod-x.x.x.jar` file and `fabric-api.jar` directly into your `mods` folder.
+
+4. **Launch & Play**:
+   - Start Minecraft using the **Fabric Loader 1.20.1** profile.
+
+---
+
+> 💡 **Multiplayer Note**: 
+> This mod is **Client-Side only**. You can freely join any vanilla, LAN, or public server! 
+> To see other players' custom skins (and for them to see yours), **both players simply need to have the mod installed in their client**. No server-side plugins or server mod installations are required!
 
 ---
     
