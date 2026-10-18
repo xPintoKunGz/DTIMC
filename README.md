@@ -20,7 +20,6 @@ A comprehensive Minecraft modification designed for character customization. Man
 ## 🚧 Roadmap  & Upcoming Features
 
 - ❌ **Mod Ecosystem Integration:** Planned compatibility for popular mods, including *Figma*, *Simple Voice Chat*, *Plasmo Voice*, and *Emotechat*.
-- ❌ **Client-Side Multiplayer Sync:** A dedicated client-side network renderer that allows other players using the mod to see your custom HD skins in multiplayer environments *(In Active Development)*.
 
 ---
 
