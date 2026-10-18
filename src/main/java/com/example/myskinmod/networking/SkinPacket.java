@@ -8,7 +8,7 @@ public class SkinPacket {
     public final int chunkIndex;
     public final int totalChunks;
     public final byte[] data;
-    public final String modelType; // ⭐ เพิ่มฟิลด์ Model Type
+    public final String modelType;
 
     public SkinPacket(UUID uuid, int chunkIndex, int totalChunks, byte[] data, String modelType) {
         this.uuid = uuid;
@@ -18,7 +18,6 @@ public class SkinPacket {
         this.modelType = (modelType == null || modelType.isEmpty()) ? "default" : modelType;
     }
 
-    // Constructor สำหรับรองรับกรณีไม่มี modelType ส่งมา (Fallback)
     public SkinPacket(UUID uuid, int chunkIndex, int totalChunks, byte[] data) {
         this(uuid, chunkIndex, totalChunks, data, "default");
     }
@@ -28,7 +27,7 @@ public class SkinPacket {
         buf.writeInt(this.chunkIndex);
         buf.writeInt(this.totalChunks);
         buf.writeByteArray(this.data);
-        buf.writeString(this.modelType); // ⭐ เขียน modelType ลง Packet
+        buf.writeString(this.modelType);
     }
 
     public static SkinPacket read(PacketByteBuf buf) {
@@ -36,7 +35,7 @@ public class SkinPacket {
         int readChunkIndex = buf.readInt();
         int readTotalChunks = buf.readInt();
         byte[] readData = buf.readByteArray();
-        String readModelType = buf.readableBytes() > 0 ? buf.readString() : "default"; // ⭐ อ่าน modelType
+        String readModelType = buf.readableBytes() > 0 ? buf.readString() : "default";
         return new SkinPacket(readUuid, readChunkIndex, readTotalChunks, readData, readModelType);
     }
 
