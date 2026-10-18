@@ -2,22 +2,13 @@ package com.example.myskinmod.util;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.PlayerListEntry;
 
-import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
-
-import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 
-import java.lang.reflect.Field;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SkinHelper {
@@ -38,45 +29,18 @@ public class SkinHelper {
 
     private static final Map<UUID, SkinData> playerSkinData = new ConcurrentHashMap<>();
 
-//    public static AbstractClientPlayerEntity createPreviewPlayer(ClientWorld world, Identifier skinId, String modelType) {
-//        GameProfile profile = new GameProfile(UUID.randomUUID(), "PreviewPlayer");
-//
-//        // สร้าง texture property พร้อม metadata
-//        String textureJson = "{\n" +
-//                "  \"textures\": {\n" +
-//                "    \"SKIN\": {\n" +
-//                "      \"url\": \"http://textures.minecraft.net/texture/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"\n" +
-//                (modelType.equals("slim") ? "      ,\"metadata\": {\"model\": \"slim\"}" : "") + "\n" +
-//                "    }\n" +
-//                "  }\n" +
-//                "}";
-//
-//        String encoded = Base64.getEncoder().encodeToString(textureJson.getBytes());
-//        profile.getProperties().put("textures", new Property("textures", encoded));
-//
-//        // สร้าง player จำลอง
-//        return new AbstractClientPlayerEntity(world, profile) {
-//            @Override
-//            public Identifier getSkinTexture() {
-//                return skinId;
-//            }
-//
-//            @Override
-//            public boolean isSpectator() {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean isCreative() {
-//                return false;
-//            }
-//        };
-//    }
+    private static final Map<java.util.UUID, Identifier> CUSTOM_SKINS = new ConcurrentHashMap<>();
+
+    public static Identifier getCustomSkin(UUID uuid) {
+        return CUSTOM_SKINS.get(uuid);
+    }
 
     public static void applySkin(PlayerEntity player, Identifier skinId, String modelType, int width, int height) {
         if (player == null || skinId == null) return;
 
         String finalModelType = modelType;
+
+        CUSTOM_SKINS.put(player.getUuid(), skinId);
 
         if (finalModelType == null || finalModelType.trim().isEmpty()) {
             try {

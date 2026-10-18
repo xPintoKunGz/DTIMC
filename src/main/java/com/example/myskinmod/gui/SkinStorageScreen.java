@@ -559,7 +559,7 @@ public class SkinStorageScreen extends Screen {
                 SkinHelper.applySkin(client.player, skinId, entry.modelType, img.getWidth(), img.getHeight());
 
                 byte[] bytes = Files.readAllBytes(path);
-                SkinNetworkHandler.sendSkinChunks(bytes);
+                SkinNetworkHandler.sendSkinChunks(bytes, entry.modelType);
 
                 ModToast.show(ModToast.Type.SUCCESS, ModLang.t("storage.toast.title"),
                         ModLang.t("storage.toast.equipped", entry.name), skinId, img.getWidth(), img.getHeight());

@@ -1,6 +1,7 @@
 package com.example.myskinmod;
 
 import com.example.myskinmod.gui.SkinStorageScreen;
+import com.example.myskinmod.storage.ActiveSkinManager;
 import com.example.myskinmod.storage.SkinStorageManager;
 import com.example.myskinmod.storage.SkinStorageManager.SkinEntry;
 import com.example.myskinmod.util.*;
@@ -220,7 +221,12 @@ public class SkinTypeSelectionScreen extends Screen {
             try {
                 tempPath = Files.createTempFile("skin_send", ".png");
                 skinImage.writeTo(tempPath);
-                SkinNetworkHandler.sendSkinChunks(Files.readAllBytes(tempPath));
+                byte[] bytes = Files.readAllBytes(tempPath);
+
+                SkinNetworkHandler.sendSkinChunks(bytes, modelType);
+
+                ActiveSkinManager.saveActiveSkin(bytes, modelType);
+
                 ModToast.show(ModToast.Type.SUCCESS, t("type.toast.applied.title"), t("type.toast.applied.msg"),
                         previewSkinId, skinImage.getWidth(), skinImage.getHeight());
             } catch (Exception e) {

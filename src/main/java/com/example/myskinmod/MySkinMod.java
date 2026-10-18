@@ -1,6 +1,7 @@
 package com.example.myskinmod;
 
 import com.example.myskinmod.networking.SkinPacket;
+import com.example.myskinmod.storage.SkinStorageManager;
 import com.example.myskinmod.util.SkinManager;
 import com.example.myskinmod.util.SkinNetworkHandler;
 import net.fabricmc.api.ClientModInitializer;
@@ -21,10 +22,13 @@ public class MySkinMod implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        SkinStorageManager.init();
+        SkinNetworkHandler.registerServer();
+
         ClientPlayNetworking.registerGlobalReceiver(SkinNetworkHandler.SKIN_SYNC_ID, (client, handler, buf, responseSender) -> {
             SkinPacket packet = SkinPacket.read(buf);
             client.execute(() -> {
-                SkinManager.receive(packet.senderUuid(), packet.chunkIndex(), packet.totalChunks(), packet.data());
+                SkinManager.receive(packet.getUuid(), packet.getChunkIndex(), packet.getTotalChunks(), packet.getData());
             });
         });
 
