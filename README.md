@@ -37,7 +37,7 @@ Since **MySkinMod** functions as a **Client-Side** multiplayer mod, installation
 ### 🚀 Step-by-Step Guide
 
 1. **Download the Mod**:
-   - Get the latest release `.jar` file from the [Releases](https://github.com/your-repo/releases) page.
+   - Get the latest release `.jar` file from the [Releases](https://github.com/xPintoKunGz/DTIMC/releases) page.
 
 2. **Locate your Mods Folder**:
    - **Windows**: Press `Win + R`, type `%appdata%\.minecraft\mods`, and press **Enter**.
@@ -45,7 +45,7 @@ Since **MySkinMod** functions as a **Client-Side** multiplayer mod, installation
    - **Linux**: `~/.minecraft/mods`
 
 3. **Install**:
-   - Place the downloaded `myskinmod-x.x.x.jar` file and `fabric-api.jar` directly into your `mods` folder.
+   - Place the downloaded `DTIMC-1.20.1-x.x.x.jar` file and `fabric-api.jar` directly into your `mods` folder.
 
 4. **Launch & Play**:
    - Start Minecraft using the **Fabric Loader 1.20.1** profile.
@@ -92,3 +92,5 @@ To set up the development environment, modify the codebase, or compile the build
 ## 📄 License
 
 Distributed under the MIT License. See the [LICENSE](https://choosealicense.com/licenses/mit/) file for more information.
+
+---
