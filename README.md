@@ -8,6 +8,7 @@ A comprehensive Minecraft modification designed for character customization. Man
 ## 📋 Key Features
 
 - **⭐ Fabric 1.20.1 Native Support:** Exclusively engineered for the Fabric Loader 1.20.1 environment *(Forge & NeoForge compatibility planned for future releases)*.
+- **⭐ Client-Side Multiplayer Sync:** Seamless client-side synchronization—other players can see your custom skin instantly, as long as they have the mod installed!
 - **⭐ Intuitive & Minimalist UI:** Clean, responsive GUI designed for seamless skin swapping in just a few clicks.
 - **⭐ High-Resolution (HD) Skins:** Native support for modern resolution formats ranging from **64x64 up to 4096x4096**, alongside classic ratios from **64x32 to 1024x512**.
 - **⭐ Flexible Import Options:** Drag & drop image files directly into the client window or pull textures from online direct links *(Supports `.png`, `.jpg`, and `.jpeg` formats up to 10 MB)*.
