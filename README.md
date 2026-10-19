@@ -61,7 +61,7 @@ Since **MySkinMod** functions as a **Client-Side** multiplayer mod, installation
 
 ## 🎤 Figura Lip-Sync (Plasmo Voice) — optional
 
-If **Figura** and **Plasmo Voice (2.1.1 or newer)** are both installed, DTIMC listens to your microphone and
+If **Figura** and **Plasmo Voice (2.1.17 or newer)** are both installed, DTIMC listens to your microphone and
 exposes the loudness to Figura avatar scripts, so your avatar's mouth can move while you talk. Without those
 mods this feature does nothing.
 
