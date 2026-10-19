@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.util;
+package bloomery.dtimc.util;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

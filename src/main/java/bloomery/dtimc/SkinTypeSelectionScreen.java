@@ -1,11 +1,10 @@
-package bloomery.dtimc.devathip_interface;
+package bloomery.dtimc;
 
-import bloomery.dtimc.devathip_interface.gui.SkinStorageScreen;
-import bloomery.dtimc.devathip_interface.storage.ActiveSkinManager;
-import bloomery.dtimc.devathip_interface.storage.SkinStorageManager;
-import bloomery.dtimc.devathip_interface.storage.SkinStorageManager.SkinEntry;
-import bloomery.dtimc.devathip_interface.util.*;
-import com.example.myskinmod.util.*;
+import bloomery.dtimc.gui.SkinStorageScreen;
+import bloomery.dtimc.storage.ActiveSkinManager;
+import bloomery.dtimc.storage.SkinStorageManager;
+import bloomery.dtimc.storage.SkinStorageManager.SkinEntry;
+import bloomery.dtimc.util.*;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;

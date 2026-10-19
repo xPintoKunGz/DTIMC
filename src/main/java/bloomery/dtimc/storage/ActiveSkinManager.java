@@ -1,7 +1,7 @@
-package bloomery.dtimc.devathip_interface.storage;
+package bloomery.dtimc.storage;
 
-import bloomery.dtimc.devathip_interface.util.SkinHelper;
-import bloomery.dtimc.devathip_interface.util.SkinNetworkHandler;
+import bloomery.dtimc.util.SkinHelper;
+import bloomery.dtimc.util.SkinNetworkHandler;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;

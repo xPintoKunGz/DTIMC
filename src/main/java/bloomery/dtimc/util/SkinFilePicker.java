@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.util;
+package bloomery.dtimc.util;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;

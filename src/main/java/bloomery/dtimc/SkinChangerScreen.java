@@ -1,8 +1,7 @@
-package bloomery.dtimc.devathip_interface;
+package bloomery.dtimc;
 
-import bloomery.dtimc.devathip_interface.util.*;
-import bloomery.dtimc.devathip_interface.gui.SkinStorageScreen;
-import com.example.myskinmod.util.*;
+import bloomery.dtimc.util.*;
+import bloomery.dtimc.gui.SkinStorageScreen;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;

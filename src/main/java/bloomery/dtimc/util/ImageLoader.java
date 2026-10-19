@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.util;
+package bloomery.dtimc.util;
 
 import net.minecraft.client.texture.NativeImage;
 import org.lwjgl.stb.STBImage;

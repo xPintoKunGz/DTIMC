@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.networking;
+package bloomery.dtimc.networking;
 
 import net.minecraft.network.PacketByteBuf;
 import java.util.UUID;

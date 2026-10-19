@@ -1,6 +1,6 @@
-package bloomery.dtimc.devathip_interface.mixin;
+package bloomery.dtimc.mixin;
 
-import bloomery.dtimc.devathip_interface.util.SkinHelper;
+import bloomery.dtimc.util.SkinHelper;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;

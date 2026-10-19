@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.mixin;
+package bloomery.dtimc.mixin;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.data.TrackedData;

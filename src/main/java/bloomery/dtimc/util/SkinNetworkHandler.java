@@ -1,6 +1,6 @@
-package bloomery.dtimc.devathip_interface.util;
+package bloomery.dtimc.util;
 
-import bloomery.dtimc.devathip_interface.networking.SkinPacket;
+import bloomery.dtimc.networking.SkinPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;

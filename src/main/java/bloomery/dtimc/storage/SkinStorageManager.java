@@ -1,4 +1,4 @@
-package bloomery.dtimc.devathip_interface.storage;
+package bloomery.dtimc.storage;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

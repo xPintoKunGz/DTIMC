@@ -4,13 +4,26 @@ plugins {
     id 'java'
 }
 
-group = 'com.example'
-version = '1.0'
+group = 'bloomery.dtimc'
+version = '1.0.0'
 
 repositories {
     mavenCentral()
     maven { url = 'https://maven.fabricmc.net/' } // Fabric repository
     maven { url = 'https://modmaven.dev/' }
+    maven {
+        name = 'Figura'
+        url = 'https://maven.figuramc.org/releases'
+    }
+    maven {
+        name = 'PlasmoVoice'
+        url = 'https://repo.plasmoverse.com/releases'
+    }
+    maven {
+        name = 'JitPack' // Figura's luaj fork only
+        url = 'https://jitpack.io'
+        content { includeGroup 'com.github.FiguraMC.luaj' }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -25,10 +38,11 @@ java {
 }
 
 jar {
-    manifest {
-        attributes(
-                "Main-Class": "com.example.myskinmod.MySkinMod"
-        )
+    def projectName = project.name
+    inputs.property "projectName", projectName
+
+    from("LICENSE") {
+        rename { "${it}_$projectName"}
     }
 }
 
@@ -37,6 +51,14 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // --- Optional: Figura mouth movement driven by Plasmo Voice (see src/main/java/.../lipsync) ---
+    // compile-only: players without these mods are unaffected, and nothing gets bundled.
+    modCompileOnly("org.figuramc:figura-fabric:${project.figura_version}") { transitive = false }
+    compileOnly "su.plo.voice.api:client:${project.plasmovoice_version}"
+    // Figura's public signatures mention luaj / websocket types; javac needs them to resolve overloads.
+    compileOnly "com.github.FiguraMC.luaj:luaj-core:${project.luaj_version}-figura"
+    compileOnly "com.neovisionaries:nv-websocket-client:2.14"
 }
 
 processResources {

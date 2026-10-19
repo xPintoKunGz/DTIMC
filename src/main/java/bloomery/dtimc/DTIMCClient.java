@@ -1,6 +1,6 @@
 package bloomery.dtimc;
 
-import bloomery.dtimc.compat.plasmovoice.PlasmoVoiceStateChannel;
+import bloomery.dtimc.compat.lipsync.LipSyncBootstrap;
 import bloomery.dtimc.networking.SkinPacket;
 import bloomery.dtimc.storage.SkinStorageManager;
 import bloomery.dtimc.util.SkinManager;
@@ -17,37 +17,22 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-
 @Environment(EnvType.CLIENT)
-public class DTIMC implements ClientModInitializer {
+public class DTIMCClient implements ClientModInitializer {
     private static KeyBinding openMenuKey;
-    public static final Map<UUID, Boolean> SPEAKING_PLAYERS = new ConcurrentHashMap<>();
 
     @Override
     public void onInitializeClient() {
         SkinStorageManager.init();
         SkinNetworkHandler.registerServer();
 
+        // Optional: Figura mouth movement driven by Plasmo Voice (no-op if either mod is missing).
+        LipSyncBootstrap.init();
+
         ClientPlayNetworking.registerGlobalReceiver(SkinNetworkHandler.SKIN_SYNC_ID, (client, handler, buf, responseSender) -> {
             SkinPacket packet = SkinPacket.read(buf);
             client.execute(() -> {
                 SkinManager.receive(packet.getUuid(), packet.getChunkIndex(), packet.getTotalChunks(), packet.getData());
-            });
-        });
-
-        ClientPlayNetworking.registerGlobalReceiver(PlasmoVoiceStateChannel.VOICE_STATE_PACKET, (client, handler, buf, responseSender) -> {
-            UUID speakerUuid = buf.readUuid();
-            boolean isSpeaking = buf.readBoolean();
-
-            client.execute(() -> {
-                if (isSpeaking) {
-                    SPEAKING_PLAYERS.put(speakerUuid, true);
-                } else {
-                    SPEAKING_PLAYERS.remove(speakerUuid);
-                }
             });
         });
 

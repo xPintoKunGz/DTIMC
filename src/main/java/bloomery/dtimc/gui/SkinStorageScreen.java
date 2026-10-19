@@ -1,10 +1,9 @@
-package bloomery.dtimc.devathip_interface.gui;
+package bloomery.dtimc.gui;
 
-import bloomery.dtimc.devathip_interface.SkinChangerScreen;
-import bloomery.dtimc.devathip_interface.storage.SkinStorageManager;
-import bloomery.dtimc.devathip_interface.storage.SkinStorageManager.SkinEntry;
-import bloomery.dtimc.devathip_interface.util.*;
-import com.example.myskinmod.util.*;
+import bloomery.dtimc.SkinChangerScreen;
+import bloomery.dtimc.storage.SkinStorageManager;
+import bloomery.dtimc.storage.SkinStorageManager.SkinEntry;
+import bloomery.dtimc.util.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
