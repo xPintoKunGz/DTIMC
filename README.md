@@ -19,7 +19,8 @@ A comprehensive Minecraft modification designed for character customization. Man
 
 ## 🚧 Roadmap  & Upcoming Features
 
-- ❌ **Mod Ecosystem Integration:** Planned compatibility for popular mods, including *Figma*, *Simple Voice Chat*, *Plasmo Voice*, and *Emotechat*.
+- ✅ **Figura Compatibility:** Seamless interoperability with Figura 3D avatar mods, allowing custom model rendering to take priority while maintaining DTIMC's storage and network sync.
+- ❌ **Mod Ecosystem Integration:** Planned compatibility for *Simple Voice Chat*, *Plasmo Voice*, and *Emotechat*.
 
 ---
 
