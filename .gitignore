@@ -33,6 +33,16 @@ bin/
 run/
 run2/
 
+# testing
+
+libs/*
+libs/
+
+# github
+
+.github/*
+.github/
+
 # java
 
 hs_err_*.log
