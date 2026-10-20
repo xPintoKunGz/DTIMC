@@ -37,11 +37,13 @@ run2/
 
 libs/*
 libs/
+libs
 
 # github
 
 .github/*
 .github/
+.github
 
 # java
 
