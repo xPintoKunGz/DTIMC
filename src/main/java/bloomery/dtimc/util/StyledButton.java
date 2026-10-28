@@ -29,6 +29,14 @@ public class StyledButton extends ButtonWidget {
         return this;
     }
 
+    /** Move and resize in one go (used for the dynamic button stack). */
+    public void setRect(int x, int y, int w, int h) {
+        this.setX(x);
+        this.setY(y);
+        this.width = w;
+        this.height = h;
+    }
+
     /** Re-position vertically and change the height (used for the dynamic button stack). */
     public void setBounds(int y, int h) {
         this.setY(y);

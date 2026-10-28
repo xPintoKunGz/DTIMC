@@ -23,11 +23,17 @@ public class ActiveSkinManager {
     private static final Gson GSON = new Gson();
 
     public static void saveActiveSkin(byte[] skinBytes, String modelType) {
+        saveActiveSkin(skinBytes, modelType, null);
+    }
+
+    /** @param figuraAvatarId Figura avatar folder linked to this skin (or null), loaded again with the skin. */
+    public static void saveActiveSkin(byte[] skinBytes, String modelType, String figuraAvatarId) {
         try {
             Files.write(SAVED_SKIN_PATH, skinBytes);
 
             JsonObject json = new JsonObject();
             json.addProperty("modelType", modelType != null ? modelType : "default");
+            if (figuraAvatarId != null) json.addProperty("figuraAvatar", figuraAvatarId);
 
             try (Writer writer = Files.newBufferedWriter(CONFIG_PATH)) {
                 GSON.toJson(json, writer);
@@ -43,11 +49,15 @@ public class ActiveSkinManager {
 
         try {
             String modelType = "default";
+            String figuraAvatar = null;
             if (Files.exists(CONFIG_PATH)) {
                 try (Reader reader = Files.newBufferedReader(CONFIG_PATH)) {
                     JsonObject json = GSON.fromJson(reader, JsonObject.class);
                     if (json != null && json.has("modelType")) {
                         modelType = json.get("modelType").getAsString();
+                    }
+                    if (json != null && json.has("figuraAvatar")) {
+                        figuraAvatar = json.get("figuraAvatar").getAsString();
                     }
                 }
             }
@@ -63,6 +73,9 @@ public class ActiveSkinManager {
 
                 SkinNetworkHandler.sendSkinChunks(bytes, modelType);
             }
+
+            // The Figura avatar that was linked to this skin comes back with it.
+            if (figuraAvatar != null) bloomery.dtimc.compat.figura.FiguraBridge.loadAndUpload(figuraAvatar);
         } catch (Exception e) {
             e.printStackTrace();
         }

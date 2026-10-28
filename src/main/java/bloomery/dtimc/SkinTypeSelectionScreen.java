@@ -39,14 +39,14 @@ public class SkinTypeSelectionScreen extends Screen {
     private ClientPlayerEntity previewPlayer;
     private boolean loadStarted = false;
 
-    private float modelYaw = 0f;
-    private float modelPitch = 0f;
+    private final PreviewView view = new PreviewView();
     private boolean rotating = false;
+    private boolean panning = false;
+    private int prevX, prevY, prevW, prevH, capY;
     private boolean pathHover = false;
     private boolean pathOverflow = false;
     private int pathBoxX, pathBoxY, pathBoxW, pathTextW, pathInnerW;
     private double pathScroll = 0;
-    private float zoom = 1.0f;
     private FolderPicker picker;
     private String chosenCategory = "All";
 
@@ -82,14 +82,20 @@ public class SkinTypeSelectionScreen extends Screen {
 
     // ------------------------------------------------------------------ layout
     private void computeLayout() {
-        int total = Math.min(width - 20, 440);
-        panelH = Math.max(214, Math.min(226, height - 60));
+        int total = Math.min(width - 20, 520);
+        panelH = Math.max(230, Math.min(300, height - 70));
         leftW = Math.max(150, (int) ((total - 8) * 0.52));
         rightW = Math.max(150, total - 8 - leftW);
         int startX = (width - (leftW + 8 + rightW)) / 2;
         leftX = startX;
         rightX = leftX + leftW + 8;
         topY = Math.max(24, (height - panelH) / 2 + 6);
+        // preview box + caption line under it
+        prevX = leftX + 6;
+        prevY = topY + 28;
+        prevW = leftW - 12;
+        prevH = panelH - 28 - 26;
+        capY = prevY + prevH + 6;
     }
 
     @Override
@@ -336,14 +342,12 @@ public class SkinTypeSelectionScreen extends Screen {
         // ---------- left: 3D preview ----------
         UiKit.panel(c, leftX, topY, leftW, panelH);
         c.drawText(tr, t("type.preview"), leftX + 10, topY + 9, UiKit.GOLD, false);
-        UiKit.inset(c, leftX + 6, topY + 28, leftW - 12, panelH - 36, 0x22FFFFFF);
-
-        render3DPreview(c, leftX + leftW / 2, topY + 28 + (int) (0.82 * (panelH - 36))); // stays visible under dialogs
+        // left drag = rotate, right drag = move, wheel = zoom (zoom % inside the box); stays visible under dialogs
+        view.render(c, tr, previewPlayer, prevX, prevY, prevW, prevH);
         if (previewPlayer == null) {
-            c.drawCenteredTextWithShadow(tr, t("type.loading"), leftX + leftW / 2, topY + panelH / 2, 0xFFAAAAAA);
-        } else {
-            c.drawCenteredTextWithShadow(tr, UiKit.fit(tr, t("type.drag_rotate"), leftW - 16), leftX + leftW / 2, topY + panelH - 20, 0xFF555566);
+            c.drawCenteredTextWithShadow(tr, t("type.loading"), leftX + leftW / 2, prevY + prevH / 2 - 4, 0xFFAAAAAA);
         }
+        view.drawCaption(c, tr, prevX, capY, prevW, mx, my);
 
         // ---------- right: details + actions ----------
         UiKit.panel(c, rightX, topY, rightW, panelH);
@@ -428,32 +432,6 @@ public class SkinTypeSelectionScreen extends Screen {
         else if (overlay != null && !overlay.isClosed()) overlay.render(c, tr, width, height, mouseX, mouseY);
     }
 
-    private void render3DPreview(DrawContext c, int x, int y) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (previewPlayer == null || previewSkinId == null) return;
-
-        Quaternionf rotation = new Quaternionf()
-                .rotateX((float) Math.toRadians(180f + modelPitch))
-                .rotateY((float) Math.toRadians(modelYaw));
-
-        previewPlayer.age = client.world != null ? (int) (client.world.getTime() % 10000L) : previewPlayer.age + 1;
-        previewPlayer.headYaw = 0f;
-        previewPlayer.bodyYaw = 0f;
-        previewPlayer.setYaw(0f);
-        previewPlayer.setPitch(0f);
-        previewPlayer.limbAnimator.setSpeed(0.0f);
-
-        // ~60% of the preview box height, so it still fits when rotated
-        int base = Math.max(24, (int) (0.60 * (panelH - 36) / 1.8));
-        int size = Math.max(10, Math.round(base * zoom));
-        int feetY = Math.round(y - 0.9f * base + 0.9f * size); // zoom around the centre of the model
-
-        // Clip to the preview box: the model never draws over other panels or buttons, at any angle.
-        c.enableScissor(leftX + 7, topY + 29, leftX + leftW - 7, topY + panelH - 9);
-        InventoryScreen.drawEntity(c, x, feetY, size, rotation, null, previewPlayer);
-        c.disableScissor();
-    }
-
     // ------------------------------------------------------------------ input
     private boolean overlayActive() {
         if (picker != null && picker.isClosed()) picker = null;
@@ -468,7 +446,13 @@ public class SkinTypeSelectionScreen extends Screen {
             else overlay.mouseClicked(mouseX, mouseY, button);
             return true;
         }
-        if (button == 0 && UiKit.in(mouseX, mouseY, leftX, topY, leftW, panelH)) rotating = true;
+        if (button == 0) {
+            if (view.captionClicked(mouseX, mouseY)) return true;
+            if (UiKit.in(mouseX, mouseY, prevX, prevY, prevW, prevH)) rotating = true;
+        } else if (button == 1 && UiKit.in(mouseX, mouseY, prevX, prevY, prevW, prevH)) {
+            panning = true; // right mouse button moves the model
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -476,8 +460,11 @@ public class SkinTypeSelectionScreen extends Screen {
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (overlayActive()) return true;
         if (button == 0 && rotating) {
-            modelYaw += (float) deltaX * 1.5f;
-            modelPitch = Math.max(-20f, Math.min(20f, modelPitch + (float) deltaY * 1.5f));
+            view.dragRotate(deltaX, deltaY);
+            return true;
+        }
+        if (button == 1 && panning) {
+            view.dragPan(deltaX, deltaY, prevW, prevH);
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -486,6 +473,7 @@ public class SkinTypeSelectionScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) rotating = false;
+        if (button == 1) panning = false;
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -507,8 +495,8 @@ public class SkinTypeSelectionScreen extends Screen {
             return true;
         }
         // wheel over the skin preview: zoom in / out
-        if (UiKit.in(mouseX, mouseY, leftX + 6, topY + 28, leftW - 12, panelH - 36)) {
-            zoom = (float) Math.max(0.7, Math.min(2.2, zoom + amount * 0.1));
+        if (UiKit.in(mouseX, mouseY, prevX, prevY, prevW, prevH)) {
+            view.scroll(amount);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, amount);

@@ -59,6 +59,10 @@ dependencies {
     // Figura's public signatures mention luaj / websocket types; javac needs them to resolve overloads.
     compileOnly "com.github.FiguraMC.luaj:luaj-core:${project.luaj_version}-figura"
     compileOnly "com.neovisionaries:nv-websocket-client:2.14"
+
+    // Kotlin
+    compileOnly "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
+    compileOnly "org.jetbrains.kotlin:kotlin-reflect:1.9.22"
 }
 
 processResources {

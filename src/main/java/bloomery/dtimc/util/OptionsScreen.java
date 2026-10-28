@@ -25,7 +25,9 @@ public class OptionsScreen extends Screen {
     private boolean draggingBar = false;
 
     private int sideW, mainW, startX, mainX, topY;
-    private static final int PANEL_H = UiKit.PANEL_H;
+    private int panelH = UiKit.PANEL_H;
+    private double generalScroll = 0;
+    private int generalContentH = 0;
 
     public OptionsScreen(Screen parent) {
         super(Text.literal("Options"));
@@ -37,12 +39,13 @@ public class OptionsScreen extends Screen {
     }
 
     private void computeLayout() {
-        int total = Math.min(width - 20, 430);
+        panelH = UiKit.panelHeight(height);
+        int total = Math.min(width - 20, 460);
         sideW = Math.max(74, Math.min(104, total / 4));
         mainW = total - sideW - 8;
         startX = (width - total) / 2;
         mainX = startX + sideW + 8;
-        topY = UiKit.topY(height);
+        topY = Math.max(22, (height - (panelH + 30)) / 2 + 8);
     }
 
     @Override
@@ -73,7 +76,7 @@ public class OptionsScreen extends Screen {
 
         drawSidebar(c, tr, mouseX, mouseY);
 
-        UiKit.panel(c, mainX, topY, mainW, PANEL_H);
+        UiKit.panel(c, mainX, topY, mainW, panelH);
         String header = tab == Tab.GENERAL ? t("options.tab.general") : t("options.tab.changelog");
         c.drawText(tr, header, mainX + 12, topY + 9, UiKit.GOLD, false);
 
@@ -85,7 +88,7 @@ public class OptionsScreen extends Screen {
     }
 
     private void drawSidebar(DrawContext c, TextRenderer tr, int mx, int my) {
-        UiKit.panel(c, startX, topY, sideW, PANEL_H);
+        UiKit.panel(c, startX, topY, sideW, panelH);
         c.drawText(tr, UiKit.fit(tr, t("options.title"), sideW - 12), startX + 8, topY + 9, UiKit.GOLD, false);
 
         Tab[] tabs = Tab.values();
@@ -105,19 +108,24 @@ public class OptionsScreen extends Screen {
             hits.add(new Hit(x, y, w, 20, () -> {
                 tab = target;
                 changelogScroll = 0;
+                generalScroll = 0;
             }));
         }
 
         // version at the bottom of the sidebar
-        c.drawCenteredTextWithShadow(tr, "v" + Changelog.CURRENT_VERSION, startX + sideW / 2, topY + PANEL_H - 14, UiKit.GRAY);
+        c.drawCenteredTextWithShadow(tr, "v" + Changelog.CURRENT_VERSION, startX + sideW / 2, topY + panelH - 14, UiKit.GRAY);
     }
 
     // ---------------- General ----------------
     private void drawGeneral(DrawContext c, TextRenderer tr, int mx, int my) {
         int x = mainX + 12;
-        int w = mainW - 24;
-        int y = topY + 30;
+        int w = mainW - 30;
+        int vpTop = topY + 28, vpBottom = topY + panelH - 6;
+        generalScroll = Math.max(0, Math.min(Math.max(0, generalContentH - (vpBottom - vpTop)), generalScroll));
+        int y = topY + 30 - (int) generalScroll;
+        int startY = y;
         ModSettings s = ModSettings.get();
+        c.enableScissor(mainX + 1, vpTop, mainX + mainW - 1, vpBottom);
 
         // --- Language ---
         c.drawText(tr, Text.literal(t("options.language")).formatted(Formatting.BOLD), x, y, 0xFFFFFFFF, false);
@@ -145,10 +153,41 @@ public class OptionsScreen extends Screen {
         y += 8;
 
         // --- Update announcement ---
-        toggleRow(c, tr, mx, my, x, y, w, t("options.popup"), t("options.popup.desc"), s.showUpdatePopup, () -> {
+        y = toggleRow(c, tr, mx, my, x, y, w, t("options.popup"), t("options.popup.desc"), s.showUpdatePopup, () -> {
             s.showUpdatePopup = !s.showUpdatePopup;
             ModSettings.save();
         });
+
+        divider(c, x, y, w);
+        y += 8;
+
+        // --- Toast notifications ---
+        y = toggleRow(c, tr, mx, my, x, y, w, t("options.toasts"), t("options.toasts.desc"), s.toastsEnabled, () -> {
+            s.toastsEnabled = !s.toastsEnabled;
+            ModSettings.save();
+        });
+
+        divider(c, x, y, w);
+        y += 8;
+
+        // --- Figura avatar with the skin ---
+        y = toggleRow(c, tr, mx, my, x, y, w, t("options.figura"), t("options.figura.desc"), s.figuraAutoLoad, () -> {
+            s.figuraAutoLoad = !s.figuraAutoLoad;
+            ModSettings.save();
+        });
+
+        c.disableScissor();
+        generalContentH = y - startY + 8;
+
+        if (generalContentH > vpBottom - vpTop) {
+            int vpH = vpBottom - vpTop;
+            int trackX = mainX + mainW - 7;
+            c.fill(trackX, vpTop, trackX + 3, vpBottom, 0x66404048);
+            int thumbH = Math.max(18, vpH * vpH / generalContentH);
+            int maxScroll = Math.max(1, generalContentH - vpH);
+            int thumbY = vpTop + (int) ((vpH - thumbH) * (generalScroll / maxScroll));
+            c.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, UiKit.ACCENT);
+        }
     }
 
     private void divider(DrawContext c, int x, int y, int w) {
@@ -210,7 +249,7 @@ public class OptionsScreen extends Screen {
     private void drawChangelog(DrawContext c, TextRenderer tr) {
         int x = mainX + 12;
         int w = mainW - 30;
-        int vpTop = topY + 28, vpBottom = topY + PANEL_H - 6;
+        int vpTop = topY + 28, vpBottom = topY + panelH - 6;
         int vpH = vpBottom - vpTop;
 
         changelogScroll = Math.max(0, Math.min(Math.max(0, changelogContentH - vpH), changelogScroll));
@@ -259,7 +298,7 @@ public class OptionsScreen extends Screen {
     }
 
     private void scrollFromMouse(double my) {
-        int vpTop = topY + 28, vpH = PANEL_H - 34;
+        int vpTop = topY + 28, vpH = panelH - 34;
         if (changelogContentH <= vpH) return;
         int thumbH = Math.max(18, vpH * vpH / changelogContentH);
         double frac = Math.max(0, Math.min(1, (my - vpTop - thumbH / 2.0) / Math.max(1, vpH - thumbH)));
@@ -270,13 +309,15 @@ public class OptionsScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            boolean inContent = mouseY >= topY + 28 && mouseY < topY + panelH - 6;
             for (Hit h : hits) {
+                if (h.x >= mainX && !inContent) continue; // scrolled out of the visible area
                 if (UiKit.in(mouseX, mouseY, h.x, h.y, h.w, h.h)) {
                     h.action.run();
                     return true;
                 }
             }
-            if (tab == Tab.CHANGELOG && UiKit.in(mouseX, mouseY, mainX + mainW - 9, topY + 28, 9, PANEL_H - 34)) {
+            if (tab == Tab.CHANGELOG && UiKit.in(mouseX, mouseY, mainX + mainW - 9, topY + 28, 9, panelH - 34)) {
                 draggingBar = true;
                 scrollFromMouse(mouseY);
                 return true;
@@ -304,6 +345,10 @@ public class OptionsScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (tab == Tab.CHANGELOG) {
             changelogScroll = Math.max(0, changelogScroll - amount * 18);
+            return true;
+        }
+        if (tab == Tab.GENERAL) {
+            generalScroll = Math.max(0, generalScroll - amount * 18);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, amount);

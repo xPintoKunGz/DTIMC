@@ -1,6 +1,9 @@
 package bloomery.dtimc.gui;
 
 import bloomery.dtimc.SkinChangerScreen;
+import bloomery.dtimc.compat.figura.FiguraBridge;
+import bloomery.dtimc.storage.ActiveSkinManager;
+import bloomery.dtimc.storage.FiguraAssignments;
 import bloomery.dtimc.storage.SkinStorageManager;
 import bloomery.dtimc.storage.SkinStorageManager.SkinEntry;
 import bloomery.dtimc.util.*;
@@ -33,9 +36,10 @@ public class SkinStorageScreen extends Screen {
     // ------------------------------------------------------------------
     // Layout constants (every panel shares the same height / header style)
     // ------------------------------------------------------------------
-    private static final int PANEL_H = 226;
-    private static final int ROW_H = 34;          // stride of a skin row
-    private static final int ROW_INNER_H = 30;    // drawn height of a skin row
+    private int panelH = 250;                     // follows the window height (UiKit.panelHeight)
+    private static final int ROW_H = 38;          // stride of a skin row
+    private static final int ROW_INNER_H = 34;    // drawn height of a skin row
+    private static final int SEARCH_H = 24;       // search row under the list header
     private static final int CAT_ROW_H = 22;      // stride of a category row
     private static final int MAX_NAME_LEN = 24;
 
@@ -95,19 +99,29 @@ public class SkinStorageScreen extends Screen {
 
     // Widgets
     private StyledButton equipButton;
-    private StyledButton toggleTypeButton;
     private StyledButton deleteButton;
     private StyledButton removeButton;
     private StyledButton addSkinButton;
     private StyledButton addToFolderButton;
-    private float zoom = 1.0f;
 
-    // 3D preview
+    // 3D preview (rotate = left drag, move = right drag, zoom = wheel)
     private ClientPlayerEntity previewPlayer;
     private Identifier previewSkinId;
-    private float modelYaw = 0.0f;
-    private float modelPitch = 0.0f;
+    private final PreviewView view = new PreviewView();
     private boolean rotating = false;
+    private boolean panning = false;
+
+    // Search
+    private String searchText = "";
+    private boolean searchFocused = false;
+    private boolean searchVisible = false;
+
+    // Figura
+    private boolean figuraOn = false;
+    private List<FiguraBridge.Avatar> avatarCache = new ArrayList<>();
+    private long avatarCacheAt = 0L;
+    private FolderPicker picker;
+    private float modelSwitchAnim = 0f;
 
     // Misc
     private long lastRefresh = 0L;
@@ -117,6 +131,8 @@ public class SkinStorageScreen extends Screen {
 
     // Layout (recomputed by computeLayout)
     private int catW, panelW, startX, listX, rightX, topY;
+    private int rbx, rbw, prevX, prevY, prevW, prevH, capY;
+    private int equipY, equipH, modelY, modelH, figY, figH, remY, remH, delY, delH;
 
     public SkinStorageScreen(Screen parent) {
         super(Text.literal("Skin Storage Cloud"));
@@ -129,13 +145,61 @@ public class SkinStorageScreen extends Screen {
     // Init / layout
     // ==================================================================
     private void computeLayout() {
-        catW = Math.max(58, Math.min(110, width / 7));
-        panelW = Math.max(86, Math.min(210, (width - catW - 32) / 2));
+        catW = Math.max(60, Math.min(140, width / 6));
+        panelW = Math.max(90, Math.min(280, (width - catW - 32) / 2));
+        panelH = UiKit.panelHeight(height);
         int total = catW + panelW * 2 + 16;
         startX = (width - total) / 2;
         listX = startX + catW + 8;
         rightX = listX + panelW + 8;
-        topY = Math.max(22, (height - 256) / 2 + 10);
+        topY = Math.max(22, (height - (panelH + 30)) / 2 + 8);
+        figuraOn = FiguraBridge.isInstalled();
+        layoutRight();
+    }
+
+    /** Right panel: preview box + caption, then equip / model switch / Figura card / remove / delete. */
+    private void layoutRight() {
+        boolean custom = isCustomCategory(currentCategory);
+        int gap = 4;
+        int[] base = {24, 28, figuraOn ? 34 : 0, custom ? 22 : 0, 24};
+        int count = 0, sum = 0;
+        for (int b : base) if (b > 0) {
+            count++;
+            sum += b;
+        }
+        int gaps = gap * (count - 1);
+        int header = 24, caption = 14, pads = 3 + 4 + 4 + 8;
+
+        int previewH = panelH - header - caption - pads - sum - gaps;
+        double scale = 1.0;
+        if (previewH < 90) {
+            previewH = 90;
+            int stackAvail = panelH - header - caption - pads - 90 - gaps;
+            scale = Math.max(0.7, stackAvail / (double) sum);
+        }
+        previewH = Math.min(previewH, 190);
+
+        rbx = rightX + 8;
+        rbw = panelW - 16;
+        prevX = rightX + 6;
+        prevW = panelW - 12;
+        prevY = topY + header + 3;
+        prevH = previewH;
+        capY = prevY + prevH + 4;
+
+        int y = capY + caption + 4;
+        int[] ys = new int[5], hs = new int[5];
+        for (int i = 0; i < 5; i++) {
+            if (base[i] == 0) continue;
+            hs[i] = Math.max(16, (int) Math.round(base[i] * scale));
+            ys[i] = y;
+            y += hs[i] + gap;
+        }
+        equipY = ys[0]; equipH = hs[0];
+        modelY = ys[1]; modelH = hs[1];
+        figY = ys[2]; figH = hs[2];
+        remY = ys[3]; remH = hs[3];
+        delY = ys[4]; delH = hs[4];
     }
 
     @Override
@@ -165,16 +229,6 @@ public class SkinStorageScreen extends Screen {
                 b -> equipSelectedSkin(), StyledButton.Style.PRIMARY);
         this.addDrawableChild(equipButton);
 
-        toggleTypeButton = new StyledButton(bx, topY + 152, bw, 20, Text.literal("Model"), b -> {
-            SkinEntry entry = getSelectedEntry();
-            if (entry != null) {
-                String newType = entry.modelType.equals("slim") ? "default" : "slim";
-                SkinStorageManager.updateSkin(entry.id, entry.name, newType);
-                refreshAndValidateStorage(); // preview rebuilds automatically (key changes)
-            }
-        }, StyledButton.Style.NORMAL);
-        this.addDrawableChild(toggleTypeButton);
-
         removeButton = new StyledButton(bx, topY + 174, bw, 20, Text.literal(t("storage.btn.remove")),
                 b -> removeSelectedFromFolder(), StyledButton.Style.WARN);
         this.addDrawableChild(removeButton);
@@ -189,7 +243,7 @@ public class SkinStorageScreen extends Screen {
         this.addDrawableChild(addSkinButton);
 
         // Custom folders only: keep adding skins straight into the folder you are looking at
-        addToFolderButton = new StyledButton(listX + 6, topY + PANEL_H - 26, panelW - 12, 20,
+        addToFolderButton = new StyledButton(listX + 6, topY + panelH - 26, panelW - 12, 20,
                 Text.literal(t("storage.btn.add_here")), b -> startImport(), StyledButton.Style.FOLDER);
         this.addDrawableChild(addToFolderButton);
     }
@@ -356,6 +410,8 @@ public class SkinStorageScreen extends Screen {
                 filtered.add(entry);
             }
         }
+        if (!searchText.isEmpty()) filtered.removeIf(en -> !matchesSearch(en));
+
         // In "All" the favorites always come first; inside each group the saved order is used.
         final boolean all = currentCategory.equals("All");
         filtered.sort((a, b) -> {
@@ -483,9 +539,7 @@ public class SkinStorageScreen extends Screen {
             boolean newSkin = e == null || previewKey == null || !previewKey.startsWith(e.id + "|");
             previewKey = key;
             if (newSkin) {
-                modelYaw = 0.0f;
-                modelPitch = 0.0f;
-                zoom = 1.0f;
+                view.reset();
             }
             createPreviewPlayerForSelected();
         }
@@ -504,28 +558,6 @@ public class SkinStorageScreen extends Screen {
         }
         this.previewSkinId = null;
         this.previewPlayer = null;
-    }
-
-    private void render3DPreview(DrawContext context, int x, int y) {
-        if (previewPlayer != null && previewSkinId != null) {
-            previewPlayer.age = 0;
-            previewPlayer.headYaw = 0.0f;
-            previewPlayer.bodyYaw = 0.0f;
-            previewPlayer.setYaw(0.0f);
-            previewPlayer.setPitch(0.0f);
-            previewPlayer.limbAnimator.setSpeed(0.0f);
-
-            Quaternionf bodyRotation = new Quaternionf()
-                    .rotateX((float) Math.toRadians(180f + modelPitch))
-                    .rotateY((float) Math.toRadians(modelYaw));
-
-            // Clip to the preview box: the model can never draw over other panels, whatever angle it is rotated to.
-            context.enableScissor(rightX + 7, topY + 25, rightX + panelW - 7, topY + 123);
-            int size = Math.max(10, Math.round(33 * zoom));
-            int feetY = Math.round(y - 0.9f * 33 + 0.9f * size); // zoom around the model's centre
-            InventoryScreen.drawEntity(context, x, feetY, size, bodyRotation, null, previewPlayer);
-            context.disableScissor();
-        }
     }
 
     // ==================================================================
@@ -554,6 +586,11 @@ public class SkinStorageScreen extends Screen {
 
                 byte[] bytes = Files.readAllBytes(path);
                 SkinNetworkHandler.sendSkinChunks(bytes, entry.modelType);
+
+                // The Figura avatar linked to this skin (or its folder) is loaded and uploaded together with it.
+                FiguraAssignments.Resolved fig = FiguraAssignments.resolve(entry.id, readSkinCategory(entry.id));
+                ActiveSkinManager.saveActiveSkin(bytes, entry.modelType, fig.avatarId());
+                if (fig.avatarId() != null) FiguraBridge.loadAndUpload(fig.avatarId());
 
                 ModToast.show(ModToast.Type.SUCCESS, ModLang.t("storage.toast.title"),
                         ModLang.t("storage.toast.equipped", entry.name), skinId, img.getWidth(), img.getHeight());
@@ -600,6 +637,146 @@ public class SkinStorageScreen extends Screen {
         toast(ModToast.Type.SUCCESS, "storage.toast.removed", e.name);
     }
 
+    private static String readSkinCategory(String skinId) {
+        try {
+            Path path = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/myskinmod_storage.json");
+            if (!Files.exists(path)) return "All";
+            JsonObject root = new Gson().fromJson(Files.readString(path), JsonObject.class);
+            if (root != null && root.has("skinCategories") && root.getAsJsonObject("skinCategories").has(skinId)) {
+                return root.getAsJsonObject("skinCategories").get(skinId).getAsString();
+            }
+        } catch (Exception ignored) { }
+        return "All";
+    }
+
+    private void setModelType(SkinEntry entry, String type) {
+        if (entry.modelType.equals(type)) return;
+        SkinStorageManager.updateSkin(entry.id, entry.name, type);
+        refreshAndValidateStorage(); // the preview rebuilds automatically (its key changes)
+    }
+
+    private boolean pickerActive() {
+        if (picker != null && picker.isClosed()) picker = null;
+        return picker != null;
+    }
+
+    // ---- Figura ----
+    private List<FiguraBridge.Avatar> avatars() {
+        long now = System.currentTimeMillis();
+        if (now - avatarCacheAt > 3000) {
+            avatarCache = FiguraBridge.listAvatars();
+            avatarCacheAt = now;
+        }
+        return avatarCache;
+    }
+
+    private String avatarName(String id) {
+        if (id == null) return t("figura.none");
+        for (FiguraBridge.Avatar a : avatars()) if (a.id().equals(id)) return a.name();
+        return t("figura.missing", id);
+    }
+
+    private void openFiguraPicker(String title, String current, java.util.function.Consumer<String> onChosen) {
+        List<FiguraBridge.Avatar> list = FiguraBridge.listAvatars();
+        if (list.isEmpty()) {
+            ModToast.info(t("figura.toast.title"), t("figura.none_found"));
+            return;
+        }
+        List<FolderPicker.Option> options = new ArrayList<>();
+        options.add(new FolderPicker.Option("", t("figura.pick.none"), true, "×"));
+        for (FiguraBridge.Avatar a : list) options.add(new FolderPicker.Option(a.id(), a.name(), false, "◆"));
+        picker = new FolderPicker(title, t("figura.pick.subtitle"), options, current == null ? "" : current,
+                id -> onChosen.accept(id.isEmpty() ? null : id), () -> { });
+    }
+
+    private void openFiguraPickerForSkin() {
+        SkinEntry e = getSelectedEntry();
+        if (e == null) return;
+        final String skinId = e.id;
+        openFiguraPicker(t("figura.pick.skin.title"), FiguraAssignments.forSkin(skinId), id -> {
+            FiguraAssignments.setSkin(skinId, id);
+            ModToast.success(t("figura.toast.title"), id == null ? t("figura.toast.cleared")
+                    : t("figura.toast.assigned", FiguraBridge.displayName(id)));
+        });
+    }
+
+    private void openFiguraPickerForFolder() {
+        if (!isCustomCategory(currentCategory)) return;
+        final String folder = currentCategory;
+        openFiguraPicker(t("figura.pick.folder.title", folder), FiguraAssignments.forFolder(folder), id -> {
+            FiguraAssignments.setFolder(folder, id);
+            ModToast.success(t("figura.toast.title"), id == null ? t("figura.toast.cleared")
+                    : t("figura.toast.assigned", FiguraBridge.displayName(id)));
+        });
+    }
+
+    // ---- search ----
+    private boolean matchesSearch(SkinEntry e) {
+        String q = searchText.trim().toLowerCase(Locale.ROOT);
+        if (q.isEmpty()) return true;
+        if (e.name.toLowerCase(Locale.ROOT).contains(q)) return true;
+        if (e.modelType.toLowerCase(Locale.ROOT).contains(q)) return true;
+        int[] sz = textureSizes.get(e.id);
+        if (sz != null && (sz[0] + "x" + sz[1]).contains(q)) return true;
+        String cat = skinCategories.getOrDefault(e.id, "All");
+        return isCustomCategory(cat) && cat.toLowerCase(Locale.ROOT).contains(q);
+    }
+
+    private int[] searchRect() {
+        return new int[]{listX + 6, topY + 27, panelW - 12, 18};
+    }
+
+    private boolean canReorder() {
+        return searchText.isEmpty() && !currentCategory.equals("Favorites");
+    }
+
+    private void drawSearchBox(DrawContext c, int mx, int my, boolean cursorOn) {
+        int[] r = searchRect();
+        boolean hover = in(r, mx, my);
+        c.fill(r[0], r[1], r[0] + r[2], r[1] + r[3], 0xFF101018);
+        int border = searchFocused ? ACCENT : hover ? 0x77FFFFFF : 0x44FFFFFF;
+        c.fill(r[0], r[1], r[0] + r[2], r[1] + 1, border);
+        c.fill(r[0], r[1] + r[3] - 1, r[0] + r[2], r[1] + r[3], border);
+        c.fill(r[0], r[1], r[0] + 1, r[1] + r[3], border);
+        c.fill(r[0] + r[2] - 1, r[1], r[0] + r[2], r[1] + r[3], border);
+
+        // magnifier
+        int mxp = r[0] + 5, myp = r[1] + 4, mc = searchFocused ? ACCENT : 0xFF8A8FA3;
+        c.fill(mxp + 1, myp, mxp + 5, myp + 1, mc);
+        c.fill(mxp + 1, myp + 5, mxp + 5, myp + 6, mc);
+        c.fill(mxp, myp + 1, mxp + 1, myp + 5, mc);
+        c.fill(mxp + 5, myp + 1, mxp + 6, myp + 5, mc);
+        c.fill(mxp + 5, myp + 5, mxp + 7, myp + 7, mc);
+        c.fill(mxp + 7, myp + 7, mxp + 8, myp + 8, mc);
+
+        int tx = r[0] + 17;
+        int clearW = searchText.isEmpty() ? 0 : 14;
+        int maxW = r[2] - 17 - 4 - clearW;
+        if (searchText.isEmpty() && !searchFocused) {
+            c.drawText(textRenderer, fit(t("storage.search.placeholder"), maxW), tx, r[1] + 5, 0xFF6C7186, false);
+        } else {
+            String shown = textRenderer.trimToWidth(searchText, Math.max(4, maxW), true);
+            c.drawText(textRenderer, shown, tx, r[1] + 5, 0xFFFFFFFF, false);
+            if (searchFocused && cursorOn) {
+                int cx = tx + textRenderer.getWidth(shown);
+                c.fill(cx + 1, r[1] + 3, cx + 2, r[1] + 14, 0xFFFFFFFF);
+            }
+        }
+        if (clearW > 0) {
+            int cx = r[0] + r[2] - 14;
+            boolean cHover = in(mx, my, cx, r[1] + 2, 12, r[3] - 4);
+            c.drawCenteredTextWithShadow(textRenderer, "×", cx + 6, r[1] + 5, cHover ? 0xFFFFFFFF : 0xFFAAAAAA);
+            if (cHover) hoverTip = t("storage.search.clear");
+        }
+    }
+
+    private void drawLock(DrawContext c, int x, int y, int color) {
+        c.fill(x + 1, y, x + 5, y + 1, color);
+        c.fill(x + 1, y + 1, x + 2, y + 3, color);
+        c.fill(x + 4, y + 1, x + 5, y + 3, color);
+        c.fill(x, y + 3, x + 6, y + 8, color);
+    }
+
     private void startDeleteCategory() {
         if (!isCustomCategory(currentCategory)) return;
         pendingCategory = currentCategory;
@@ -632,6 +809,7 @@ public class SkinStorageScreen extends Screen {
         skinCategories.remove(id);
         favoriteSkins.remove(id);
         skinOrder.remove(id);
+        FiguraAssignments.removeSkin(id);
         SkinStorageManager.deleteSkin(id);
 
         Identifier tex = loadedTextures.remove(id);
@@ -654,6 +832,7 @@ public class SkinStorageScreen extends Screen {
         if (catName == null || !isCustomCategory(catName)) return;
         skinCategories.values().removeIf(c -> c.equals(catName));
         categories.remove(catName);
+        FiguraAssignments.removeFolder(catName);
         if (catName.equals(importTargetCategory)) importTargetCategory = "All";
         currentCategory = "All";
         scrollOffset = 0;
@@ -698,12 +877,28 @@ public class SkinStorageScreen extends Screen {
     }
 
     // ---- reorder ----
-    private int dropIndex(List<SkinEntry> filtered, double my) {
-        int idx = (int) Math.floor((my - (topY + 28) + scrollOffset) / ROW_H);
+    /** In "All" the favorites are pinned at the top: nothing can be dropped above (or onto) them. */
+    private int firstMovableIndex(List<SkinEntry> filtered) {
+        if (!currentCategory.equals("All")) return 0;
+        int n = 0;
+        for (SkinEntry e : filtered) {
+            if (favoriteSkins.contains(e.id)) n++;
+            else break;
+        }
+        return n;
+    }
+
+    private int rawDropIndex(List<SkinEntry> filtered, double my) {
+        int idx = (int) Math.floor((my - rowsOrigin() + scrollOffset) / ROW_H);
         return Math.max(0, Math.min(filtered.size() - 1, idx));
     }
 
+    private int dropIndex(List<SkinEntry> filtered, double my) {
+        return Math.max(firstMovableIndex(filtered), rawDropIndex(filtered, my));
+    }
+
     private void performReorder(double my) {
+        if (!canReorder() || favoriteSkins.contains(draggedEntryId)) return; // favorites never move
         List<SkinEntry> filtered = getFilteredEntries();
         int oldIdx = indexOfId(filtered, draggedEntryId);
         if (oldIdx < 0 || filtered.isEmpty()) return;
@@ -787,6 +982,7 @@ public class SkinStorageScreen extends Screen {
                 int idx = categories.indexOf(oldCat);
                 if (idx >= 2) {
                     categories.set(idx, text);
+                    FiguraAssignments.renameFolder(oldCat, text);
                     if (oldCat.equals(importTargetCategory)) importTargetCategory = text;
                     for (Map.Entry<String, String> entry : skinCategories.entrySet()) {
                         if (entry.getValue().equals(oldCat)) entry.setValue(text);
@@ -818,13 +1014,18 @@ public class SkinStorageScreen extends Screen {
         return in(mx, my, r[0], r[1], r[2], r[3]);
     }
 
-    /** Toolbar tile i (0 = new, 1 = rename, 2 = delete) at the bottom of the category panel. */
+    private int toolbarCount() {
+        return figuraOn ? 4 : 3;
+    }
+
+    /** Toolbar tile i (0 new, 1 rename, 2 delete, 3 Figura avatar of the folder) at the bottom of the category panel. */
     private int[] toolbarTile(int i) {
+        int n = toolbarCount();
         int gap = 2;
-        int tw = (catW - 8 - gap * 2) / 3;
-        int total = tw * 3 + gap * 2;
+        int tw = (catW - 8 - gap * (n - 1)) / n;
+        int total = tw * n + gap * (n - 1);
         int x0 = startX + (catW - total) / 2;
-        return new int[]{x0 + i * (tw + gap), topY + PANEL_H - 26, tw, 20};
+        return new int[]{x0 + i * (tw + gap), topY + panelH - 26, tw, 20};
     }
 
     private int[] reorderTile() {
@@ -833,11 +1034,14 @@ public class SkinStorageScreen extends Screen {
 
     private int customTop() { return topY + 82; }
 
-    private int customBottom() { return topY + PANEL_H - 30; }
+    private int customBottom() { return topY + panelH - 30; }
 
-    private int listTop() { return topY + 26; }
+    private int listTop() { return topY + 26 + SEARCH_H; }
 
-    private int listBottom() { return topY + PANEL_H - (isCustomCategory(currentCategory) ? 30 : 4); }
+    /** y of the first skin row (rows are ROW_H apart). */
+    private int rowsOrigin() { return listTop() + 2; }
+
+    private int listBottom() { return topY + panelH - (isCustomCategory(currentCategory) ? 30 : 4); }
 
     private int categoryAt(double mx, double my) {
         if (mx < startX + 4 || mx >= startX + catW - 4) return -1;
@@ -908,6 +1112,10 @@ public class SkinStorageScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         computeLayout();
 
+        if (pickerActive()) {
+            picker.mouseClicked(mouseX, mouseY, button);
+            return true;
+        }
         if (announceActive()) {
             announce.mouseClicked(mouseX, mouseY, button);
             return true;
@@ -923,6 +1131,13 @@ public class SkinStorageScreen extends Screen {
             }
             return true;
         }
+        if (button == 1) { // right mouse button: move the model inside the preview
+            if (getSelectedEntry() != null && in(mouseX, mouseY, prevX, prevY, prevW, prevH)) {
+                panning = true;
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
 
         // Clicking anywhere while editing commits the edit first.
@@ -931,13 +1146,28 @@ public class SkinStorageScreen extends Screen {
 
         List<SkinEntry> filtered = getFilteredEntries();
 
+        // Search box
+        if (searchVisible) {
+            int[] sr = searchRect();
+            if (in(mouseX, mouseY, sr[0], sr[1], sr[2], sr[3])) {
+                if (!searchText.isEmpty() && mouseX >= sr[0] + sr[2] - 16) {
+                    searchText = "";
+                    scrollOffset = 0;
+                }
+                searchFocused = true;
+                return true;
+            }
+        }
+        searchFocused = false;
+
         // Category toolbar
         boolean custom = isCustomCategory(currentCategory);
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < toolbarCount(); i++) {
             if (in(toolbarTile(i), mouseX, mouseY)) {
                 if (i == 0) startCreateCategory();
                 else if (i == 1 && custom) startRenameCategory();
                 else if (i == 2 && custom) startDeleteCategory();
+                else if (i == 3 && custom) openFiguraPickerForFolder();
                 return true;
             }
         }
@@ -972,20 +1202,20 @@ public class SkinStorageScreen extends Screen {
             int x1 = listX + 3;
             int x2 = listX + panelW - 9;
             if (mouseX >= x1 && mouseX < x2 && mouseY >= listTop() && mouseY < listBottom()) {
-                int idx = (int) Math.floor((mouseY - (topY + 28) + scrollOffset) / ROW_H);
+                int idx = (int) Math.floor((mouseY - rowsOrigin() + scrollOffset) / ROW_H);
                 if (idx >= 0 && idx < filtered.size()) {
-                    int y = topY + 28 + idx * ROW_H - (int) scrollOffset;
+                    int y = rowsOrigin() + idx * ROW_H - (int) scrollOffset;
                     if (mouseY < y + ROW_INNER_H) {
                         SkinEntry e = filtered.get(idx);
                         int pencilX = x2 - 31;
                         int heartX = x2 - 16;
-                        if (in(mouseX, mouseY, pencilX, y + 8, 14, 14)) {
+                        if (in(mouseX, mouseY, pencilX, y + 10, 14, 14)) {
                             if (e.id.equals(committedSkinId)) return true; // the ✓ button just saved it
                             selectedId = e.id;
                             beginSkinEdit(e);
                             return true;
                         }
-                        if (in(mouseX, mouseY, heartX, y + 8, 14, 14)) {
+                        if (in(mouseX, mouseY, heartX, y + 10, 14, 14)) {
                             toggleFavorite(e.id);
                             return true;
                         }
@@ -999,11 +1229,21 @@ public class SkinStorageScreen extends Screen {
                 }
             }
 
-            // Preview rotation
-            if (getSelectedEntry() != null
-                    && in(mouseX, mouseY, rightX + 6, topY + 24, panelW - 12, 100)) {
-                rotating = true;
-                return true;
+            SkinEntry sel = getSelectedEntry();
+            if (sel != null) {
+                if (view.captionClicked(mouseX, mouseY)) return true;
+                if (in(mouseX, mouseY, rbx, modelY, rbw, modelH)) {
+                    setModelType(sel, mouseX < rbx + rbw / 2.0 ? "default" : "slim");
+                    return true;
+                }
+                if (figuraOn && in(mouseX, mouseY, rbx, figY, rbw, figH)) {
+                    openFiguraPickerForSkin();
+                    return true;
+                }
+                if (in(mouseX, mouseY, prevX, prevY, prevW, prevH)) { // left drag = rotate
+                    rotating = true;
+                    return true;
+                }
             }
         }
 
@@ -1012,7 +1252,7 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (modal != Modal.NONE || announceActive()) return true;
+        if (modal != Modal.NONE || announceActive() || pickerActive()) return true;
         if (button == 0) {
             if (scrollbarDragging) {
                 scrollFromMouse(mouseY, getFilteredEntries().size());
@@ -1025,16 +1265,20 @@ public class SkinStorageScreen extends Screen {
                 return true;
             }
             if (rotating) {
-                modelYaw += (float) deltaX * 1.5f;
-                modelPitch = Math.max(-20.0f, Math.min(20.0f, modelPitch + (float) deltaY * 1.5f));
+                view.dragRotate(deltaX, deltaY);
                 return true;
             }
+        }
+        if (button == 1 && panning) {
+            view.dragPan(deltaX, deltaY, prevW, prevH);
+            return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 1) panning = false;
         if (button == 0) {
             computeLayout();
             scrollbarDragging = false;
@@ -1044,7 +1288,7 @@ public class SkinStorageScreen extends Screen {
                     int ci = categoryAt(mouseX, mouseY);
                     if (ci >= 0) {
                         handleDropOnCategory(ci);
-                    } else if (reorderMode && inListViewport(mouseX, mouseY)) {
+                    } else if (reorderMode && canReorder() && !favoriteSkins.contains(draggedEntryId) && inListViewport(mouseX, mouseY)) {
                         performReorder(mouseY);
                     }
                 }
@@ -1058,17 +1302,18 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        if (modal != Modal.NONE || announceActive()) return true;
+        if (pickerActive()) return picker.mouseScrolled(amount);
+        if (modal != Modal.NONE || announceActive() || pickerActive()) return true;
         computeLayout();
-        if (getSelectedEntry() != null && in(mouseX, mouseY, rightX + 6, topY + 24, panelW - 12, 100)) {
-            zoom = (float) Math.max(0.7, Math.min(2.2, zoom + amount * 0.1)); // wheel over the preview = zoom
+        if (getSelectedEntry() != null && in(mouseX, mouseY, prevX, prevY, prevW, prevH)) {
+            view.scroll(amount); // wheel over the preview = zoom
             return true;
         }
         if (mouseX >= startX && mouseX <= startX + catW && mouseY >= customTop() && mouseY < customBottom()) {
             categoryScrollOffset = Math.max(0, categoryScrollOffset - amount * 18);
             return true;
         }
-        if (mouseX >= listX && mouseX < listX + panelW && mouseY >= topY && mouseY < topY + PANEL_H) {
+        if (mouseX >= listX && mouseX < listX + panelW && mouseY >= topY && mouseY < topY + panelH) {
             scrollOffset = Math.max(0, scrollOffset - amount * 18);
             return true;
         }
@@ -1077,7 +1322,14 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        if (modal != Modal.NONE || announceActive()) return true;
+        if (modal != Modal.NONE || announceActive() || pickerActive()) return true;
+        if (searchFocused) {
+            if (SharedConstants.isValidChar(chr) && searchText.length() < 32) {
+                searchText += chr;
+                scrollOffset = 0;
+            }
+            return true;
+        }
         if (editMode != EditMode.NONE) {
             if (SharedConstants.isValidChar(chr) && editBuffer.length() < MAX_NAME_LEN) editBuffer += chr;
             return true;
@@ -1087,10 +1339,44 @@ public class SkinStorageScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (pickerActive()) return picker.keyPressed(keyCode);
         if (announceActive()) return announce.keyPressed(keyCode);
         if (modal != Modal.NONE) {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) confirmModal();
             else if (keyCode == GLFW.GLFW_KEY_ESCAPE) closeModal();
+            return true;
+        }
+
+        if (searchFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                searchText = "";
+                searchFocused = false;
+                scrollOffset = 0;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                searchFocused = false;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!searchText.isEmpty()) {
+                    searchText = searchText.substring(0, searchText.length() - 1);
+                    scrollOffset = 0;
+                }
+                return true;
+            }
+            if (Screen.isPaste(keyCode) && this.client != null) {
+                for (char ch : this.client.keyboard.getClipboard().toCharArray()) {
+                    if (searchText.length() >= 32) break;
+                    if (SharedConstants.isValidChar(ch)) searchText += ch;
+                }
+                scrollOffset = 0;
+                return true;
+            }
+            if (keyCode != GLFW.GLFW_KEY_UP && keyCode != GLFW.GLFW_KEY_DOWN) return true;
+        }
+        if (Screen.hasControlDown() && keyCode == GLFW.GLFW_KEY_F && searchVisible) {
+            searchFocused = true;
             return true;
         }
 
@@ -1165,7 +1451,7 @@ public class SkinStorageScreen extends Screen {
         autoScrollWhileDragging(mouseX, mouseY);
         clampScrolls(filtered);
 
-        boolean modalOpen = modal != Modal.NONE || announceActive();
+        boolean modalOpen = modal != Modal.NONE || announceActive() || pickerActive();
         overlayOpen = modalOpen;
         int mx = modalOpen ? -9999 : mouseX;
         int my = modalOpen ? -9999 : mouseY;
@@ -1178,37 +1464,34 @@ public class SkinStorageScreen extends Screen {
         drawCategoryPanel(context, mx, my, cursorOn);
 
         boolean empty = filtered.isEmpty();
-        equipButton.visible = !empty;
-        toggleTypeButton.visible = !empty;
-        deleteButton.visible = !empty;
+        boolean noResults = empty && !searchText.isEmpty();
         boolean inCustom = isCustomCategory(currentCategory);
-        removeButton.visible = !empty && inCustom;
-        addToFolderButton.visible = !empty && inCustom;
-        removeButton.setMessage(Text.literal(t("storage.btn.remove")));
-        addToFolderButton.setMessage(Text.literal(t("storage.btn.add_here")));
-        {
-            StyledButton[] stack = inCustom
-                    ? new StyledButton[]{equipButton, toggleTypeButton, removeButton, deleteButton}
-                    : new StyledButton[]{equipButton, toggleTypeButton, deleteButton};
-            int areaTop = topY + 130, areaH = PANEL_H - 130 - 10;
-            int gap = inCustom ? 3 : 4;
-            int bh = (areaH - gap * (stack.length - 1)) / stack.length;
-            for (int i = 0; i < stack.length; i++) stack[i].setBounds(areaTop + i * (bh + gap), bh);
-        }
-        addSkinButton.visible = empty && !currentCategory.equals("Favorites"); // Favorites: only the heart adds skins
+        boolean showRight = !empty;
+        searchVisible = !empty || noResults;
+
+        equipButton.visible = showRight;
+        deleteButton.visible = showRight;
+        removeButton.visible = showRight && inCustom;
+        addToFolderButton.visible = showRight && inCustom;
+        equipButton.setRect(rbx, equipY, rbw, equipH);
+        deleteButton.setRect(rbx, delY, rbw, delH);
+        removeButton.setRect(rbx, remY, rbw, remH);
+        addToFolderButton.setRect(listX + 6, topY + panelH - 26, panelW - 12, 20);
         equipButton.setMessage(Text.literal(t("storage.btn.equip")));
         deleteButton.setMessage(Text.literal(t("storage.btn.delete")));
-        SkinEntry sel = getSelectedEntry();
-        if (!empty && sel != null) {
-            toggleTypeButton.setMessage(Text.literal(t("storage.btn.model",
-                    sel.modelType.equals("slim") ? t("storage.model.slim") : t("storage.model.def"))));
-        }
+        removeButton.setMessage(Text.literal(t("storage.btn.remove")));
+        addToFolderButton.setMessage(Text.literal(t("storage.btn.add_here")));
 
-        if (empty) {
+        // Favorites: only the heart adds skins. No import button while a search simply has no results.
+        addSkinButton.visible = empty && !noResults && !currentCategory.equals("Favorites");
+        int importW = Math.min(180, panelW * 2 - 24);
+        addSkinButton.setRect(listX + (panelW * 2 + 8 - importW) / 2, topY + panelH / 2 + 11, importW, 22);
+
+        if (empty && !noResults) {
             drawEmptyState(context);
         } else {
             drawListPanel(context, filtered, mx, my, cursorOn);
-            drawRightPanel(context);
+            drawRightPanel(context, mx, my);
         }
 
         super.render(context, mx, my, delta); // widgets
@@ -1235,6 +1518,7 @@ public class SkinStorageScreen extends Screen {
 
         if (modal != Modal.NONE) drawModal(context, mouseX, mouseY);
         else if (announceActive()) announce.render(context, textRenderer, width, height, mouseX, mouseY);
+        else if (pickerActive()) picker.render(context, textRenderer, width, height, mouseX, mouseY);
     }
 
     private void autoScrollWhileDragging(int mx, int my) {
@@ -1275,7 +1559,7 @@ public class SkinStorageScreen extends Screen {
 
     // ---------------- Category panel ----------------
     private void drawCategoryPanel(DrawContext c, int mx, int my, boolean cursorOn) {
-        drawPanel(c, startX, topY, catW, PANEL_H);
+        drawPanel(c, startX, topY, catW, panelH);
         c.drawText(textRenderer, fit(t("storage.categories"), catW - 12), startX + 8, topY + 9, GOLD, false);
 
         boolean dragging = dragStarted && draggedEntryId != null;
@@ -1334,10 +1618,10 @@ public class SkinStorageScreen extends Screen {
 
         // Toolbar (compact icon tiles)
         boolean custom = isCustomCategory(currentCategory);
-        String[] glyphs = {"+", "✎", "×"};
-        int[] colors = {GREEN, 0xFFFFD27A, 0xFFFF7B7B};
-        String[] tips = {t("storage.tip.new_folder"), t("storage.tip.rename_folder"), t("storage.tip.delete_folder")};
-        for (int i = 0; i < 3; i++) {
+        String[] glyphs = {"+", "✎", "×", "F"};
+        int[] colors = {GREEN, 0xFFFFD27A, 0xFFFF7B7B, VIOLET};
+        String[] tips = {t("storage.tip.new_folder"), t("storage.tip.rename_folder"), t("storage.tip.delete_folder"), t("figura.tip.folder")};
+        for (int i = 0; i < toolbarCount(); i++) {
             int[] r = toolbarTile(i);
             boolean enabled = i == 0 || custom;
             boolean hover = in(r, mx, my);
@@ -1394,7 +1678,7 @@ public class SkinStorageScreen extends Screen {
     // ---------------- Empty state ----------------
     private void drawEmptyState(DrawContext c) {
         int w = panelW * 2 + 8;
-        drawPanel(c, listX, topY, w, PANEL_H);
+        drawPanel(c, listX, topY, w, panelH);
         c.drawText(textRenderer, fit(t("storage.folder", catLabel(currentCategory)), w - 20), listX + 10, topY + 9, GOLD, false);
 
         int cx = listX + w / 2;
@@ -1402,7 +1686,7 @@ public class SkinStorageScreen extends Screen {
         String l1 = validEntries.isEmpty() ? t("storage.empty.storage")
                 : fav ? t("storage.empty.fav") : t("storage.empty.folder");
         String l2 = fav ? t("storage.empty.fav_hint") : t("storage.empty.import_hint");
-        int base = fav ? 84 : 66;
+        int base = panelH / 2 - (fav ? 29 : 47);
         c.drawCenteredTextWithShadow(textRenderer, fav ? "♥" : "✦", cx, topY + base, fav ? PINK : ACCENT);
         c.drawCenteredTextWithShadow(textRenderer, fit(l1, w - 20), cx, topY + base + 20, 0xFFCCCCCC);
         c.drawCenteredTextWithShadow(textRenderer, fit(l2, w - 20), cx, topY + base + 34, 0xFF888888);
@@ -1410,30 +1694,46 @@ public class SkinStorageScreen extends Screen {
 
     // ---------------- List panel ----------------
     private void drawListPanel(DrawContext c, List<SkinEntry> filtered, int mx, int my, boolean cursorOn) {
-        drawPanel(c, listX, topY, panelW, PANEL_H);
+        drawPanel(c, listX, topY, panelW, panelH);
 
         // Header: folder name, count, reorder toggle
         int[] rt = reorderTile();
+        boolean canReorder = canReorder();
         boolean rHover = in(rt, mx, my);
         String countStr = String.valueOf(filtered.size());
         int countX = rt[0] - 5 - textRenderer.getWidth(countStr);
         c.drawText(textRenderer, countStr, countX, topY + 9, 0xFF8A8FA3, false);
         c.drawText(textRenderer, fit(t("storage.folder", catLabel(currentCategory)), countX - 6 - (listX + 10)),
                 listX + 10, topY + 9, GOLD, false);
-        drawTile(c, rt[0], rt[1], rt[2], rt[3], "↕", reorderMode ? 0xFFFFFFFF : 0xFFB8C0D4, true, reorderMode, rHover);
-        if (rHover) hoverTip = reorderMode ? t("storage.reorder_on") : t("storage.reorder_off");
+        drawTile(c, rt[0], rt[1], rt[2], rt[3], "↕", reorderMode && canReorder ? 0xFFFFFFFF : 0xFFB8C0D4,
+                canReorder, reorderMode && canReorder, rHover);
+        if (rHover) {
+            hoverTip = !canReorder ? (searchText.isEmpty() ? t("storage.tip.locked") : t("storage.tip.reorder_search"))
+                    : reorderMode ? t("storage.reorder_on") : t("storage.reorder_off");
+        }
+
+        drawSearchBox(c, mx, my, cursorOn);
 
         int vpTop = listTop(), vpBottom = listBottom();
         int x1 = listX + 3;
         int x2 = listX + panelW - 9;
-        boolean showIdx = panelW >= 130;
-        boolean reorderDrag = reorderMode && dragStarted && draggedEntryId != null;
+        boolean showIdx = panelW >= 140;
+        boolean reorderOn = reorderMode && canReorder;
+        boolean reorderDrag = reorderOn && dragStarted && draggedEntryId != null && !favoriteSkins.contains(draggedEntryId);
         boolean dragging = dragStarted && draggedEntryId != null;
+        int minIdx = firstMovableIndex(filtered);
+
+        if (filtered.isEmpty()) {
+            c.drawCenteredTextWithShadow(textRenderer, fit(t("storage.empty.no_results"), panelW - 16),
+                    listX + panelW / 2, vpTop + 30, 0xFFCCCCCC);
+            c.drawCenteredTextWithShadow(textRenderer, fit(t("storage.empty.no_results_hint"), panelW - 16),
+                    listX + panelW / 2, vpTop + 44, 0xFF888888);
+        }
 
         c.enableScissor(listX + 1, vpTop, listX + panelW - 1, vpBottom);
         for (int i = 0; i < filtered.size(); i++) {
             SkinEntry e = filtered.get(i);
-            int y = topY + 28 + i * ROW_H - (int) scrollOffset;
+            int y = rowsOrigin() + i * ROW_H - (int) scrollOffset;
             if (y + ROW_INNER_H < vpTop || y > vpBottom) continue;
 
             boolean selected = e.id.equals(selectedId);
@@ -1443,11 +1743,14 @@ public class SkinStorageScreen extends Screen {
             boolean editingThis = editMode == EditMode.SKIN && e.id.equals(editTargetId);
             boolean fav = favoriteSkins.contains(e.id);
 
-            // Is the name cut off? (same geometry as the name column below)
-            int nameColX = x1 + (showIdx ? 26 : 8) + 28;
-            int nameColW = Math.max(10, (x2 - 31) - 3 - nameColX);
-            boolean truncated = textRenderer.getWidth(e.name) > nameColW;
-            // Hold SHIFT over a cut-off name: full name tooltip + the row lights up gold
+            int headX = x1 + (showIdx ? 28 : 8);
+            int nameX = headX + 26 + 7;
+            int pencilX = x2 - 31;
+            int heartX = x2 - 16;
+            int nameMaxW = Math.max(10, pencilX - 3 - nameX);
+
+            // Is the name cut off? Hold SHIFT over it: full-name tooltip + the row lights up gold
+            boolean truncated = textRenderer.getWidth(e.name) > nameMaxW;
             boolean shiftFocus = hover && truncated && !editingThis && Screen.hasShiftDown();
 
             int bg = editingThis ? 0xAA3A3320 : selected ? 0x904078A8 : hover ? 0x45FFFFFF : 0x30FFFFFF;
@@ -1461,65 +1764,68 @@ public class SkinStorageScreen extends Screen {
                 c.fill(x2 - 1, y, x2, y + ROW_INNER_H, 0xFFFFC857);
             }
             if (hover && truncated && !editingThis) hoverTip = Screen.hasShiftDown() ? e.name : t("storage.tip.shift_full");
+            if (hover && reorderOn && fav) hoverTip = t("storage.tip.locked");
             if (selected) c.fill(x1, y, x1 + 3, y + ROW_INNER_H, ACCENT);
             else if (fav) c.fill(x1, y, x1 + 2, y + ROW_INNER_H, 0x99FF7B9C);
 
             if (showIdx) {
-                String lead = reorderMode ? "≡" : "#" + (i + 1);
-                c.drawText(textRenderer, lead, x1 + 7, y + 11, reorderMode ? GREEN : GOLD, true);
+                if (reorderOn && fav) {
+                    drawLock(c, x1 + 9, y + 13, GOLD); // favorites are pinned
+                } else {
+                    c.drawText(textRenderer, reorderOn ? "≡" : "#" + (i + 1), x1 + 7, y + 13, reorderOn ? GREEN : GOLD, true);
+                }
             }
-            int headX = x1 + (showIdx ? 26 : 8);
-            drawHead(c, e.id, headX, y + 4, 22);
-
-            int nameX = headX + 22 + 6;
-            int pencilX = x2 - 31;
-            int heartX = x2 - 16;
-            int nameMaxW = Math.max(10, pencilX - 3 - nameX);
+            drawHead(c, e.id, headX, y + 4, 26);
 
             if (editingThis) {
                 String shown = textRenderer.trimToWidth(editBuffer, nameMaxW - 3, true);
-                c.drawText(textRenderer, shown, nameX, y + 5, 0xFFFFE9A6, false);
+                c.drawText(textRenderer, shown, nameX, y + 6, 0xFFFFE9A6, false);
                 int cx = nameX + textRenderer.getWidth(shown);
-                if (cursorOn) c.fill(cx + 1, y + 4, cx + 2, y + 14, 0xFFFFFFFF);
-                c.fill(nameX - 1, y + 15, nameX + nameMaxW, y + 16, GOLD);
-                c.drawText(textRenderer, fit(t("storage.edit_hint"), nameMaxW), nameX, y + 19, 0xFF8FD9B0, false);
+                if (cursorOn) c.fill(cx + 1, y + 5, cx + 2, y + 15, 0xFFFFFFFF);
+                c.fill(nameX - 1, y + 17, nameX + nameMaxW, y + 18, GOLD);
+                c.drawText(textRenderer, fit(t("storage.edit_hint"), nameMaxW), nameX, y + 22, 0xFF8FD9B0, false);
             } else {
-                c.drawText(textRenderer, fit(e.name, nameMaxW), nameX, y + 6, 0xFFFFFFFF, false);
+                c.drawText(textRenderer, fit(e.name, nameMaxW), nameX, y + 7, 0xFFFFFFFF, false);
+
+                // model + resolution (+ folder)
                 String typeStr = e.modelType.toUpperCase();
-                c.drawText(textRenderer, fit(typeStr, nameMaxW), nameX, y + 18, 0xFFAAAAAA, false);
-                // Which folder is this skin in? Only custom folders are named (the heart already marks favorites).
+                c.drawText(textRenderer, fit(typeStr, nameMaxW), nameX, y + 21, 0xFFAAAAAA, false);
+                int off = textRenderer.getWidth(typeStr) + 6;
+                int[] sz = textureSizes.get(e.id);
+                if (sz != null && nameMaxW - off > 24) {
+                    String res = sz[0] + "x" + sz[1];
+                    c.drawText(textRenderer, fit(res, nameMaxW - off), nameX + off, y + 21, 0xFF8FC4E8, false);
+                    off += textRenderer.getWidth(res) + 6;
+                }
                 String skinCat = skinCategories.getOrDefault(e.id, "All");
-                if (isCustomCategory(skinCat)) {
-                    int typeW = textRenderer.getWidth(typeStr) + 6;
-                    int rem = nameMaxW - typeW;
-                    if (rem > 14) c.drawText(textRenderer, fit("▣ " + skinCat, rem), nameX + typeW, y + 18, VIOLET, false);
+                if (isCustomCategory(skinCat) && nameMaxW - off > 14) {
+                    c.drawText(textRenderer, fit("▣ " + skinCat, nameMaxW - off), nameX + off, y + 21, VIOLET, false);
                 }
             }
 
             // Rename ✎ / save ✓ (part of the row, so it scrolls and clips with it)
-            boolean pHover = !dragging && in(mx, my, pencilX, y + 8, 14, 14)
-                    && my >= vpTop && my < vpBottom;
-            if (pHover) c.fill(pencilX, y + 8, pencilX + 14, y + 22, 0x40FFFFFF);
+            boolean pHover = !dragging && in(mx, my, pencilX, y + 10, 14, 14) && my >= vpTop && my < vpBottom;
+            if (pHover) c.fill(pencilX, y + 10, pencilX + 14, y + 24, 0x40FFFFFF);
             int pColor = editingThis ? GREEN : pHover ? 0xFFFFFFFF : selected ? 0xFFFFD27A : 0xFFB0B4C4;
-            c.drawCenteredTextWithShadow(textRenderer, editingThis ? "✓" : "✎", pencilX + 7, y + 11, pColor);
+            c.drawCenteredTextWithShadow(textRenderer, editingThis ? "✓" : "✎", pencilX + 7, y + 13, pColor);
             if (pHover) hoverTip = editingThis ? t("storage.tip.save_name") : t("storage.tip.rename");
 
             // Favorite heart
-            boolean hHover = !dragging && in(mx, my, heartX, y + 8, 14, 14)
-                    && my >= vpTop && my < vpBottom;
-            if (hHover) c.fill(heartX, y + 8, heartX + 14, y + 22, 0x40FFFFFF);
+            boolean hHover = !dragging && in(mx, my, heartX, y + 10, 14, 14) && my >= vpTop && my < vpBottom;
+            if (hHover) c.fill(heartX, y + 10, heartX + 14, y + 24, 0x40FFFFFF);
             int hColor = fav ? 0xFFFF5555 : hHover ? 0xFFFFFFFF : 0xFFAAAAAA;
-            c.drawCenteredTextWithShadow(textRenderer, fav ? "♥" : "♡", heartX + 7, y + 11, hColor);
+            c.drawCenteredTextWithShadow(textRenderer, fav ? "♥" : "♡", heartX + 7, y + 13, hColor);
             if (hHover) hoverTip = fav ? t("storage.tip.fav_remove") : t("storage.tip.fav_add");
         }
 
-        // Reorder insertion marker
+        // Reorder insertion marker (red when the drop would land above the pinned favorites)
         if (reorderDrag && inListViewport(mx, my)) {
             int oldIdx = indexOfId(filtered, draggedEntryId);
-            int dropIdx = dropIndex(filtered, my);
+            int raw = rawDropIndex(filtered, my);
+            int dropIdx = Math.max(minIdx, raw);
             if (oldIdx >= 0 && dropIdx != oldIdx) {
-                int ly = topY + 28 + dropIdx * ROW_H - (int) scrollOffset + (dropIdx > oldIdx ? ROW_INNER_H : -3);
-                c.fill(x1, ly, x2, ly + 2, GREEN);
+                int ly = rowsOrigin() + dropIdx * ROW_H - (int) scrollOffset + (dropIdx > oldIdx ? ROW_INNER_H : -3);
+                c.fill(x1, ly, x2, ly + 2, raw < minIdx ? 0xFFFF5555 : GREEN);
             }
         }
         c.disableScissor();
@@ -1538,26 +1844,93 @@ public class SkinStorageScreen extends Screen {
     }
 
     // ---------------- Right panel ----------------
-    private void drawRightPanel(DrawContext c) {
-        drawPanel(c, rightX, topY, panelW, PANEL_H);
+    private void drawRightPanel(DrawContext c, int mx, int my) {
+        drawPanel(c, rightX, topY, panelW, panelH);
         SkinEntry e = getSelectedEntry();
         if (e == null) return;
 
         c.drawCenteredTextWithShadow(textRenderer, fit("✦ " + e.name, panelW - 16),
                 rightX + panelW / 2, topY + 9, GOLD);
 
-        int bx1 = rightX + 6, by1 = topY + 24, bx2 = rightX + panelW - 6, by2 = topY + 124;
-        c.fill(bx1, by1, bx2, by2, 0x66000000);
-        c.fill(bx1, by2 - 1, bx2, by2, 0x22FFFFFF);
-
-        render3DPreview(c, rightX + panelW / 2, topY + 104); // dialogs are drawn above it, so it never disappears
+        // 3D preview: left drag rotates, right drag moves, wheel zooms (zoom % shown inside the box)
+        view.render(c, textRenderer, previewPlayer, prevX, prevY, prevW, prevH);
         if (previewPlayer == null) {
             c.drawCenteredTextWithShadow(textRenderer, t("storage.preview_unavailable"), rightX + panelW / 2,
-                    topY + 70, 0xFF666677);
-        } else {
-            c.drawCenteredTextWithShadow(textRenderer, fit(t("storage.drag_rotate"), panelW - 16), rightX + panelW / 2,
-                    topY + 113, 0xFF555566);
+                    prevY + prevH / 2 - 4, 0xFF666677);
         }
+        view.drawCaption(c, textRenderer, prevX, capY, prevW, mx, my);
+
+        drawModelSwitch(c, mx, my, e);
+        if (figuraOn) drawFiguraCard(c, mx, my, e);
+    }
+
+    /** Sliding two-way switch with a little pixel character for each arm style. */
+    private void drawModelSwitch(DrawContext c, int mx, int my, SkinEntry e) {
+        boolean slim = e.modelType.equals("slim");
+        modelSwitchAnim += ((slim ? 1f : 0f) - modelSwitchAnim) * 0.3f;
+
+        int x = rbx, y = modelY, w = rbw, h = modelH;
+        int segW = (w - 4) / 2;
+        c.fill(x, y, x + w, y + h, 0xFF1A1C26);
+        c.fill(x, y, x + w, y + 1, 0x44FFFFFF);
+
+        int knobX = x + 2 + Math.round(modelSwitchAnim * segW);
+        c.fill(knobX, y + 2, knobX + segW, y + h - 2, 0xFF1B5E7A);
+        c.fill(knobX, y + 2, knobX + segW, y + 3, ACCENT);
+        c.fill(knobX, y + h - 4, knobX + segW, y + h - 2, ACCENT);
+
+        for (int i = 0; i < 2; i++) {
+            int segX = x + 2 + i * segW;
+            boolean active = (i == 1) == slim;
+            boolean hover = in(mx, my, segX, y, segW, h);
+            int fh = 17;
+            int fx = segX + 7, fy = y + (h - fh) / 2 - 1;
+            int skin = 0xFFE8B98F, shirt = active ? 0xFF3AC0D0 : 0xFF2E7F8A, legs = active ? 0xFF4B4BC8 : 0xFF38389A;
+            boolean slimFig = i == 1;
+            c.fill(fx + 3, fy, fx + 9, fy + 5, skin);                 // head
+            c.fill(fx + 3, fy, fx + 9, fy + 2, 0xFF5A3A22);           // hair
+            c.fill(fx + 3, fy + 5, fx + 9, fy + 11, shirt);           // body
+            int armW = slimFig ? 2 : 3;
+            c.fill(fx + 3 - armW, fy + 5, fx + 3, fy + 11, skin);     // arms
+            c.fill(fx + 9, fy + 5, fx + 9 + armW, fy + 11, skin);
+            c.fill(fx + 3, fy + 11, fx + 6, fy + 17, legs);           // legs
+            c.fill(fx + 6, fy + 11, fx + 9, fy + 17, legs);
+
+            String label = i == 0 ? t("storage.model.classic") : t("storage.model.slim");
+            Text txt = active ? Text.literal(fit(label, segW - 30)).formatted(Formatting.BOLD) : Text.literal(fit(label, segW - 30));
+            c.drawText(textRenderer, txt, fx + 17, y + (h - 8) / 2, active ? 0xFFFFFFFF : hover ? 0xFFD0D4E0 : 0xFF7C8196, false);
+            if (hover) hoverTip = i == 0 ? t("storage.tip.model_classic") : t("storage.tip.model_slim");
+        }
+    }
+
+    private void drawFiguraCard(DrawContext c, int mx, int my, SkinEntry e) {
+        int x = rbx, y = figY, w = rbw, h = figH;
+        FiguraAssignments.Resolved r = FiguraAssignments.resolve(e.id, skinCategories.getOrDefault(e.id, "All"));
+        boolean hover = in(mx, my, x, y, w, h);
+        c.fill(x, y, x + w, y + h, hover ? 0xFF2A2740 : 0xFF1E1C2C);
+        c.fill(x, y, x + 3, y + h, VIOLET);
+        c.fill(x, y, x + w, y + 1, hover ? VIOLET : 0x44FFFFFF);
+
+        // little avatar glyph
+        int ix = x + 10, iy = y + (h - 12) / 2;
+        c.fill(ix + 3, iy, ix + 9, iy + 5, VIOLET);
+        c.fill(ix, iy + 7, ix + 12, iy + 12, VIOLET);
+
+        int tx = x + 29;
+        int top = y + Math.max(2, (h - 19) / 2);
+        c.drawText(textRenderer, "Figura", tx, top, 0xFF9A8CCB, false);
+        String src = switch (r.source()) {
+            case SKIN -> t("figura.src.skin");
+            case FOLDER -> t("figura.src.folder", r.folder());
+            default -> null;
+        };
+        if (src != null) {
+            String fitted = fit(src, w - 34 - textRenderer.getWidth("Figura") - 6);
+            c.drawText(textRenderer, fitted, x + w - 6 - textRenderer.getWidth(fitted), top, GOLD, false);
+        }
+        String name = avatarName(r.avatarId());
+        c.drawText(textRenderer, fit(name, w - 36), tx, top + 10, r.avatarId() == null ? 0xFF8A8FA3 : 0xFFFFFFFF, false);
+        if (hover) hoverTip = t("figura.tip.card");
     }
 
     // ---------------- Modal ----------------

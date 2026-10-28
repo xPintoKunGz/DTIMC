@@ -19,6 +19,10 @@ public final class ModSettings {
     public boolean hideBrowseWarning = false;
     /** lets us switch things on once when a new settings version arrives */
     public int settingsVersion = 0;
+    /** false = no toast pop-ups at all */
+    public boolean toastsEnabled = true;
+    /** true = equipping a skin also loads + uploads the Figura avatar linked to it */
+    public boolean figuraAutoLoad = true;
 
     private static ModSettings instance;
 

@@ -14,6 +14,11 @@ public final class UiKit {
     public static final int GRAY = 0xFF8A8FA3;
     public static final int PANEL_H = 226;
 
+    /** Panel height that follows the window: bigger screens get a bigger, roomier interface. */
+    public static int panelHeight(int screenHeight) {
+        return Math.max(250, Math.min(360, screenHeight - 80));
+    }
+
     private UiKit() { }
 
     public static boolean in(double mx, double my, int x, int y, int w, int h) {
